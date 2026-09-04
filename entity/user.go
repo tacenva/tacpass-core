@@ -15,7 +15,7 @@ const (
 
 type User struct {
 	ID           string     `json:"-" gorm:"type:varchar(26);primaryKey"`
-	PermissionId string     `json:"permission_id" gorm:"type:varchar(26);not null"`
+	PermissionID string     `json:"permission_id" gorm:"type:varchar(26);not null"`
 	Hostname     string     `json:"hostname" gorm:"type:varchar(50);not null"`
 	Token        string     `json:"token" gorm:"type:varchar(128);not null"`
 	Status       UserStatus `json:"status" gorm:"type:varchar(20);not null"`

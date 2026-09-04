@@ -27,10 +27,3 @@ func (p *Vault) BeforeCreate(tx *gorm.DB) error {
 
 	return nil
 }
-
-type VaultAccess struct {
-	ID        string `json:"-" gorm:"type:varchar(26);primaryKey"`
-	VaultID   string `json:"-" gorm:"type:varchar(26);not null;index"`
-	VaultKey  string `json:"-" gorm:"type:text;not null"`
-	PublicKey string `json:"-" gorm:"type:text;not null"`
-}

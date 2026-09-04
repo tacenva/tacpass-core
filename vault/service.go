@@ -6,6 +6,9 @@ import (
 
 	"github.com/tacenva/database"
 	"github.com/tacenva/tacpass-core/entity"
+	"github.com/tacenva/tacpass-core/permission"
+	"github.com/tacenva/tacpass-core/util/credential"
+	"github.com/tacenva/tacpass-core/vaultaccess"
 )
 
 var (
@@ -16,16 +19,26 @@ var (
 type Service struct {
 	repository    *repository
 	vaultRecordDB *database.DB
+
+	permissionService  *permission.Service
+	vaultaccessService *vaultaccess.Service
 }
 
-func NewService(repository *repository, vaultRecordDB *database.DB) *Service {
+func NewService(
+	repository *repository,
+	vaultRecordDB *database.DB,
+	permissionService *permission.Service,
+	vaultaccessService *vaultaccess.Service,
+) *Service {
 	return &Service{
-		repository:    repository,
-		vaultRecordDB: vaultRecordDB,
+		repository:         repository,
+		vaultRecordDB:      vaultRecordDB,
+		permissionService:  permissionService,
+		vaultaccessService: vaultaccessService,
 	}
 }
 
-func (s *Service) Create(name string, password string) (*entity.Vault, error) {
+func (s *Service) Create(name string, permissionId string) (*entity.Vault, error) {
 	name = strings.TrimSpace(name)
 
 	if name == "" {
@@ -40,7 +53,22 @@ func (s *Service) Create(name string, password string) (*entity.Vault, error) {
 		return nil, err
 	}
 
-	_, err := s.vaultRecordDB.File(vault.ID, password)
+	permission, err := s.permissionService.Get(permissionId)
+	if err != nil {
+		return nil, err
+	}
+
+	vaultKey, err := credential.Generate(32)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = s.vaultaccessService.Create(vault.ID, permission.ID, vaultKey)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = s.vaultRecordDB.File(vault.ID, vaultKey)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +76,7 @@ func (s *Service) Create(name string, password string) (*entity.Vault, error) {
 	return vault, nil
 }
 
-func (s *Service) Get(id string, password string) (*entity.Vault, []entity.VaultRecord, error) {
+func (s *Service) Get(id string, vaultKey string) (*entity.Vault, []entity.VaultRecord, error) {
 	id = strings.TrimSpace(id)
 
 	if id == "" {
@@ -64,7 +92,7 @@ func (s *Service) Get(id string, password string) (*entity.Vault, []entity.Vault
 		return nil, nil, ErrNotFound
 	}
 
-	fileDB, err := s.vaultRecordDB.File(vault.ID, password)
+	fileDB, err := s.vaultRecordDB.File(vault.ID, vaultKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -77,8 +105,12 @@ func (s *Service) Get(id string, password string) (*entity.Vault, []entity.Vault
 	return vault, vaultRecord, nil
 }
 
-func (s *Service) List() ([]entity.Vault, error) {
+func (s *Service) List(permissionId string) ([]entity.Vault, error) {
 	return s.repository.FindAll()
+}
+
+func (s *Service) ListByPermissionId(permissionId string) ([]entity.VaultAccess, error) {
+	return s.permissionService.VaultList(permissionId)
 }
 
 func (s *Service) Update(id string, name string) (*entity.Vault, error) {

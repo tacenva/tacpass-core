@@ -4,6 +4,7 @@ import (
 	"github.com/tacenva/tacpass-core/entity"
 	"github.com/tacenva/tacpass-core/permission"
 	"github.com/tacenva/tacpass-core/user"
+	"github.com/tacenva/tacpass-core/util/keyring"
 )
 
 type Service struct {
@@ -25,7 +26,7 @@ func (s *Service) List() ([]entity.Permission, error) {
 	return s.permissionService.List()
 }
 
-func (s *Service) Create(privilege entity.Privilege) (*entity.Permission, string, error) {
+func (s *Service) Create(privilege entity.Privilege) (*entity.Permission, *keyring.KeyPair, error) {
 	return s.permissionService.Create(privilege)
 }
 

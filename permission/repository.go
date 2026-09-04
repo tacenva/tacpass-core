@@ -41,11 +41,11 @@ func (r *repository) FindByID(id string) (*entity.Permission, error) {
 	return &permission, nil
 }
 
-func (r *repository) FindByToken(tokenHash string) (*entity.Permission, error) {
+func (r *repository) FindByPublicKey(publicKey string) (*entity.Permission, error) {
 	var permission entity.Permission
 
 	err := r.db.
-		Where("token = ?", tokenHash).
+		Where("public_key = ?", publicKey).
 		First(&permission).
 		Error
 
@@ -59,6 +59,41 @@ func (r *repository) FindByToken(tokenHash string) (*entity.Permission, error) {
 
 	return &permission, nil
 }
+
+func (r *repository) GetVault(permissionId string) ([]entity.VaultAccess, error) {
+	var permission entity.Permission
+
+	err := r.db.
+		Preload("Accesses").
+		Preload("Accesses.Vault").
+		First(&permission, "id = ?", permissionId).
+		Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return permission.Accesses, nil
+}
+
+// func (r *repository) FindByToken(tokenHash string) (*entity.Permission, error) {
+// 	var permission entity.Permission
+
+// 	err := r.db.
+// 		Where("token = ?", tokenHash).
+// 		First(&permission).
+// 		Error
+
+// 	if errors.Is(err, gorm.ErrRecordNotFound) {
+// 		return nil, nil
+// 	}
+
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// 	return &permission, nil
+// }
 
 func (r *repository) FindAll() ([]entity.Permission, error) {
 	var permissions []entity.Permission
@@ -81,7 +116,6 @@ func (r *repository) Update(permission *entity.Permission) error {
 		Where("id = ?", permission.ID).
 		Updates(map[string]any{
 			"privilege": permission.Privilege,
-			"token":     permission.Token,
 			"revoked":   permission.Revoked,
 		}).
 		Error

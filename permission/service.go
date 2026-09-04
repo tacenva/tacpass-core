@@ -5,17 +5,17 @@ import (
 	"strings"
 
 	"github.com/tacenva/tacpass-core/entity"
-	"github.com/tacenva/tacpass-core/util/credential"
+	"github.com/tacenva/tacpass-core/util/keyring"
 )
 
 var (
 	ErrNotFound         = errors.New("permission not found")
-	ErrTokenEmpty       = errors.New("token cannot be empty")
 	ErrPrivilegeInvalid = errors.New("invalid privilege")
+	ErrPublicKeyEmpty   = errors.New("public key is empty")
 	ErrRevoked          = errors.New("permission revoked")
 )
 
-const tokenSize = 32
+// const accessTokenSize = 32
 
 type Service struct {
 	repository *repository
@@ -29,27 +29,28 @@ func NewService(repository *repository) *Service {
 
 func (s *Service) Create(
 	privilege entity.Privilege,
-) (*entity.Permission, string, error) {
+) (*entity.Permission, *keyring.KeyPair, error) {
 	if !privilege.IsValid() {
-		return nil, "", ErrPrivilegeInvalid
+		return nil, nil, ErrPrivilegeInvalid
 	}
 
-	token, err := credential.Generate(tokenSize)
+	keyPair, err := keyring.GenerateKeyPair()
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 
 	permission := &entity.Permission{
 		Privilege: privilege,
-		Token:     credential.Hash(token),
-		Revoked:   false,
+		PublicKey: keyPair.PublicKey,
+		// AccessToken: credential.Hash(accessToken),
+		Revoked: false,
 	}
 
 	if err := s.repository.Create(permission); err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 
-	return permission, token, nil
+	return permission, keyPair, nil
 }
 
 func (s *Service) Get(id string) (*entity.Permission, error) {
@@ -71,16 +72,14 @@ func (s *Service) Get(id string) (*entity.Permission, error) {
 	return permission, nil
 }
 
-func (s *Service) GetByToken(token string) (*entity.Permission, error) {
-	token = strings.TrimSpace(token)
+func (s *Service) GetByPublicKey(publicKey string) (*entity.Permission, error) {
+	publicKey = strings.TrimSpace(publicKey)
 
-	if token == "" {
-		return nil, ErrTokenEmpty
+	if publicKey == "" {
+		return nil, ErrPublicKeyEmpty
 	}
 
-	tokenHash := credential.Hash(token)
-
-	permission, err := s.repository.FindByToken(tokenHash)
+	permission, err := s.repository.FindByPublicKey(publicKey)
 	if err != nil {
 		return nil, err
 	}
@@ -96,8 +95,37 @@ func (s *Service) GetByToken(token string) (*entity.Permission, error) {
 	return permission, nil
 }
 
+// func (s *Service) GetByToken(accessToken string) (*entity.Permission, error) {
+// 	accessToken = strings.TrimSpace(accessToken)
+
+// 	if accessToken == "" {
+// 		return nil, ErrTokenEmpty
+// 	}
+
+// 	accessTokenHash := credential.Hash(accessToken)
+
+// 	permission, err := s.repository.FindByToken(accessTokenHash)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// 	if permission == nil {
+// 		return nil, ErrNotFound
+// 	}
+
+// 	if permission.Revoked {
+// 		return nil, ErrRevoked
+// 	}
+
+// 	return permission, nil
+// }
+
 func (s *Service) List() ([]entity.Permission, error) {
 	return s.repository.FindAll()
+}
+
+func (s *Service) VaultList(permissionId string) ([]entity.VaultAccess, error) {
+	return s.repository.GetVault(permissionId)
 }
 
 func (s *Service) ChangePrivilege(id string, privilege entity.Privilege) error {

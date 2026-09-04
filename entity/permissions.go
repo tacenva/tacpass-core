@@ -16,10 +16,12 @@ const (
 type Permission struct {
 	ID        string    `json:"-" gorm:"type:varchar(26);primaryKey"`
 	Privilege Privilege `json:"privilege" gorm:"type:varchar(10);not null"`
-	Token     string    `json:"token" gorm:"type:varchar(128);not null"`
-	Revoked   bool      `json:"revoked" gorm:"not null;default:false"`
+	// AccessToken   string    `json:"access_token" gorm:"type:text;not null"`
+	PublicKey string `json:"-" gorm:"type:text;not null"`
+	Revoked   bool   `json:"revoked" gorm:"not null;default:false"`
 
-	Users []User `json:"users,omitempty" gorm:"foreignKey:PermissionId"`
+	Users    []User        `json:"users,omitempty" gorm:"foreignKey:PermissionId"`
+	Accesses []VaultAccess `json:"-" gorm:"foreignKey:PermissionID;references:ID"`
 }
 
 func (p Privilege) IsValid() bool {

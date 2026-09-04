@@ -47,7 +47,7 @@ func (s *Service) Create(
 	}
 
 	user := &entity.User{
-		PermissionId: permissionID,
+		PermissionID: permissionID,
 		Hostname:     hostname,
 		Token:        credential.Hash(token),
 		Status:       userStatus,

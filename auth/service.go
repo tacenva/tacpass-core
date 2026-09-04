@@ -21,12 +21,12 @@ func NewService(
 	}
 }
 
-func (s *Service) Access(
+func (s *Service) RequestEnrollment(
 	hostname string,
-	permissionToken string,
+	publicKey string,
 	userStatus entity.UserStatus,
 ) (string, error) {
-	permission, err := s.permissionService.GetByToken(permissionToken)
+	permission, err := s.permissionService.GetByPublicKey(publicKey)
 	if err != nil {
 		return "", err
 	}
@@ -37,4 +37,25 @@ func (s *Service) Access(
 	}
 
 	return token, nil
+}
+
+func (s *Service) Authenticate(token string) error {
+	userData, err := s.userService.GetByToken(token)
+	if err != nil {
+		return err
+	}
+
+	switch userData.Status {
+	case entity.UserStatusApproved:
+		return nil
+
+	case entity.UserStatusPending:
+		return user.ErrPending
+
+	case entity.UserStatusRevoked:
+		return user.ErrRevoked
+
+	default:
+		return user.ErrStatusInvalid
+	}
 }

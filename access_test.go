@@ -47,12 +47,22 @@ func newTestAuthService(t *testing.T) (*user.Service, *permission.Service, *acce
 func TestLocalAccess(t *testing.T) {
 	_, permissionService, _, authService := newTestAuthService(t)
 
-	_, permissionToken, err := permissionService.Create(entity.PrivilegeAdmin)
+	_, keyPair, err := permissionService.Create(entity.PrivilegeAdmin)
 	if err != nil {
 		t.Fatalf("failed to create permission: %v", err)
 	}
 
-	_, err = authService.Access("hostname", permissionToken, entity.UserStatusApproved)
+	token, err := authService.RequestEnrollment(
+		"hostname",
+		keyPair.PublicKey,
+		entity.UserStatusApproved,
+	)
+	if err != nil {
+		t.Fatalf("failed to auth: %v", err)
+	}
+	if err = authService.Authenticate(token); err != nil {
+		t.Fatalf("failed to auth: %v", err)
+	}
 }
 
 func TestRemoteAccess(t *testing.T) {
@@ -60,18 +70,22 @@ func TestRemoteAccess(t *testing.T) {
 
 	t.Log("create permission")
 
-	permission, permissionToken, err := accesscontrolService.Create(entity.PrivilegeAdmin)
+	permission, keyPair, err := accesscontrolService.Create(entity.PrivilegeAdmin)
 	if err != nil {
 		t.Fatalf("failed to create permission: %v", err)
 	}
 
 	t.Logf("created permission: %+v", permission)
 	t.Logf("permission ID: %q", permission.ID)
-	t.Logf("permission token: %q", permissionToken)
+	t.Logf("permission public key: %q", keyPair.PublicKey)
 
 	t.Log("access")
 
-	_, err = authService.Access("hostname", permissionToken, entity.UserStatusPending)
+	token, err := authService.RequestEnrollment(
+		"hostname",
+		keyPair.PublicKey,
+		entity.UserStatusApproved,
+	)
 	if err != nil {
 		t.Fatalf("failed to create permission: %v", err)
 	}
@@ -98,6 +112,11 @@ func TestRemoteAccess(t *testing.T) {
 	t.Log("approve user")
 
 	_, err = accesscontrolService.ApproveUser(selectedUser.ID)
+
+	// test auth
+	if err := authService.Authenticate(token); err != nil {
+		t.Fatalf("failed to auth: %v", err)
+	}
 
 	t.Log("revoke user")
 
