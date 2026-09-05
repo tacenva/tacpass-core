@@ -19,11 +19,25 @@ func (r *repository) Create(vaultAccess *entity.VaultAccess) error {
 	return r.db.Create(vaultAccess).Error
 }
 
-func (r *repository) FindByID(id string) (*entity.VaultAccess, error) {
+func (r *repository) FindByPermissionID(permissionId string) (*entity.VaultAccess, error) {
 	var vaultAccess entity.VaultAccess
 
 	err := r.db.
-		First(&vaultAccess, "id = ?", id).
+		First(&vaultAccess, "permission_id = ?", permissionId).
+		Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &vaultAccess, nil
+}
+
+func (r *repository) FindByVaultID(vaultId string) (*entity.VaultAccess, error) {
+	var vaultAccess entity.VaultAccess
+
+	err := r.db.
+		First(&vaultAccess, "vault_id = ?", vaultId).
 		Error
 
 	if err != nil {
@@ -55,36 +69,6 @@ func (r *repository) FindAll() ([]entity.VaultAccess, error) {
 	var vaultAccesses []entity.VaultAccess
 
 	err := r.db.
-		Find(&vaultAccesses).
-		Error
-
-	if err != nil {
-		return nil, err
-	}
-
-	return vaultAccesses, nil
-}
-
-func (r *repository) FindByVaultID(vaultID string) ([]entity.VaultAccess, error) {
-	var vaultAccesses []entity.VaultAccess
-
-	err := r.db.
-		Where("vault_id = ?", vaultID).
-		Find(&vaultAccesses).
-		Error
-
-	if err != nil {
-		return nil, err
-	}
-
-	return vaultAccesses, nil
-}
-
-func (r *repository) FindByPermissionID(permissionID string) ([]entity.VaultAccess, error) {
-	var vaultAccesses []entity.VaultAccess
-
-	err := r.db.
-		Where("permission_id = ?", permissionID).
 		Find(&vaultAccesses).
 		Error
 

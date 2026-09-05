@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/tacenva/tacpass-core/entity"
+	"github.com/tacenva/tacpass-core/util/keyring"
 )
 
 var (
@@ -57,25 +58,11 @@ func (s *Service) Create(
 	return vaultAccess, nil
 }
 
-func (s *Service) Get(id string) (*entity.VaultAccess, error) {
-	id = strings.TrimSpace(id)
-
-	if id == "" {
-		return nil, ErrNotFound
-	}
-
-	vaultAccess, err := s.repository.FindByID(id)
-	if err != nil {
-		return nil, err
-	}
-
-	return vaultAccess, nil
-}
-
-func (s *Service) GetByVaultAndPermission(
+func (s *Service) GetVaultKey(
 	vaultID string,
 	permissionID string,
-) (*entity.VaultAccess, error) {
+	keyPair *keyring.KeyPair,
+) ([]byte, error) {
 	vaultID = strings.TrimSpace(vaultID)
 	permissionID = strings.TrimSpace(permissionID)
 
@@ -95,77 +82,16 @@ func (s *Service) GetByVaultAndPermission(
 		return nil, err
 	}
 
-	return vaultAccess, nil
-}
-
-func (s *Service) List() ([]entity.VaultAccess, error) {
-	return s.repository.FindAll()
-}
-
-func (s *Service) ListByVaultID(
-	vaultID string,
-) ([]entity.VaultAccess, error) {
-	vaultID = strings.TrimSpace(vaultID)
-
-	if vaultID == "" {
-		return nil, ErrVaultIDEmpty
-	}
-
-	return s.repository.FindByVaultID(vaultID)
-}
-
-func (s *Service) ListByPermissionID(
-	permissionID string,
-) ([]entity.VaultAccess, error) {
-	permissionID = strings.TrimSpace(permissionID)
-
-	if permissionID == "" {
-		return nil, ErrPermissionIDEmpty
-	}
-
-	return s.repository.FindByPermissionID(permissionID)
-}
-
-func (s *Service) Update(
-	id string,
-	vaultID string,
-	permissionID string,
-	vaultKey string,
-) (*entity.VaultAccess, error) {
-	id = strings.TrimSpace(id)
-	vaultID = strings.TrimSpace(vaultID)
-	permissionID = strings.TrimSpace(permissionID)
-
-	if id == "" {
-		return nil, ErrNotFound
-	}
-
-	if vaultID == "" {
-		return nil, ErrVaultIDEmpty
-	}
-
-	if permissionID == "" {
-		return nil, ErrPermissionIDEmpty
-	}
-
-	if vaultKey == "" {
-		return nil, ErrVaultKeyEmpty
-	}
-
-	vaultAccess, err := s.repository.FindByID(id)
+	vaultKey, err := keyPair.Open(vaultAccess.VaultKey)
 	if err != nil {
 		return nil, err
 	}
 
-	vaultAccess.VaultID = vaultID
-	vaultAccess.PermissionID = permissionID
-	vaultAccess.VaultKey = vaultKey
+	return vaultKey, nil
+}
 
-	if err := s.repository.Update(vaultAccess); err != nil {
-		return nil, err
-	}
-
-	return vaultAccess, nil
+func (s *Service) List() ([]entity.VaultAccess, error) {
+	return s.repository.FindAll()
 }
 
 func (s *Service) Delete(id string) error {

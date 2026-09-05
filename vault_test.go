@@ -78,7 +78,6 @@ func newTestVaultService(
 	vaultService := vault.NewService(
 		vaultRepository,
 		tacenvaDB,
-		permissionService,
 		vaultaccessService,
 	)
 
@@ -119,15 +118,16 @@ func TestLocalVault(t *testing.T) {
 
 	t.Log("authenticate")
 
-	if err := authService.Authenticate(token); err != nil {
+	authUser, err := authService.GetUserData(token)
+	if err != nil {
 		t.Fatalf("failed to authenticate: %v", err)
 	}
 
 	t.Log("create vault")
 
 	vaultData, err := vaultService.Create(
+		authUser,
 		"vault-1",
-		token,
 	)
 	if err != nil {
 		t.Fatalf("failed to create vault: %v", err)

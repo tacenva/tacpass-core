@@ -61,6 +61,10 @@ func (s *Service) Authenticate(token string) error {
 		return err
 	}
 
+	if userData.Permission.Revoked {
+		return permission.ErrRevoked
+	}
+
 	switch userData.Status {
 	case entity.UserStatusApproved:
 		return nil
@@ -83,4 +87,29 @@ func (s *Service) GetPermission(authToken string) (*entity.Permission, error) {
 	}
 
 	return &userData.Permission, nil
+}
+
+func (s *Service) GetUserData(token string) (*entity.User, error) {
+	userData, err := s.userService.GetByToken(token)
+	if err != nil {
+		return nil, err
+	}
+
+	if userData.Permission.Revoked {
+		return nil, permission.ErrRevoked
+	}
+
+	switch userData.Status {
+	case entity.UserStatusApproved:
+		return userData, nil
+
+	case entity.UserStatusPending:
+		return nil, user.ErrPending
+
+	case entity.UserStatusRevoked:
+		return nil, user.ErrRevoked
+
+	default:
+		return nil, user.ErrStatusInvalid
+	}
 }

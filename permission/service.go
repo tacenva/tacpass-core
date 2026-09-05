@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/tacenva/tacpass-core/entity"
-	"github.com/tacenva/tacpass-core/util/credential"
 	"github.com/tacenva/tacpass-core/util/keyring"
 )
 
@@ -15,8 +14,6 @@ var (
 	ErrPublicKeyEmpty   = errors.New("public key is empty")
 	ErrRevoked          = errors.New("permission revoked")
 )
-
-// const accessTokenSize = 32
 
 type Service struct {
 	repository *repository
@@ -43,8 +40,7 @@ func (s *Service) Create(
 	permission := &entity.Permission{
 		Privilege: privilege,
 		PublicKey: keyPair.PublicKey,
-		// AccessToken: credential.Hash(accessToken),
-		Revoked: false,
+		Revoked:   false,
 	}
 
 	if err := s.repository.Create(permission); err != nil {
@@ -71,11 +67,6 @@ func (s *Service) Get(id string) (*entity.Permission, error) {
 	}
 
 	return permission, nil
-}
-
-func (s *Service) GetByToken(authToken string) (*entity.Permission, error) {
-	authTokenHash := credential.Hash(authToken)
-	return s.repository.FindByToken(authTokenHash)
 }
 
 func (s *Service) GetByPublicKey(publicKey string) (*entity.Permission, error) {
