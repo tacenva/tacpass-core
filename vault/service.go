@@ -17,9 +17,8 @@ var (
 )
 
 type Service struct {
-	repository    *repository
-	vaultRecordDB *database.DB
-
+	repository         *repository
+	vaultRecordDB      *database.DB
 	vaultaccessService *vaultaccess.Service
 }
 
@@ -35,9 +34,8 @@ func NewService(
 	}
 }
 
-func (s *Service) Create(authUser *entity.User, name string) (*entity.Vault, error) {
+func (s *Service) Create(authUser *entity.User, name string, keyPair *keyring.KeyPair) (*entity.Vault, error) {
 	name = strings.TrimSpace(name)
-
 	if name == "" {
 		return nil, ErrNameEmpty
 	}
@@ -50,17 +48,33 @@ func (s *Service) Create(authUser *entity.User, name string) (*entity.Vault, err
 		return nil, err
 	}
 
+	// Raw key yang dipakai untuk database vault.
 	vaultKey, err := credential.Generate(32)
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = s.vaultaccessService.Create(vault.ID, authUser.PermissionID, vaultKey)
+	// Encrypt/seal vault key menggunakan public key user.
+	sealedVaultKey, err := keyPair.Seal([]byte(vaultKey))
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = s.vaultRecordDB.File(vault.ID, vaultKey)
+	// Yang disimpan di VaultAccess harus ciphertext.
+	_, err = s.vaultaccessService.Create(
+		vault.ID,
+		authUser.PermissionID,
+		sealedVaultKey,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Database file tetap menggunakan RAW vault key.
+	_, err = s.vaultRecordDB.File(
+		vault.ID,
+		string(vaultKey),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -68,11 +82,22 @@ func (s *Service) Create(authUser *entity.User, name string) (*entity.Vault, err
 	return vault, nil
 }
 
-func (s *Service) VaultList(authUser *entity.User) ([]entity.Vault, error) {
-	return s.repository.FindAccessible(authUser.PermissionID)
+func (s *Service) VaultList(
+	authUser *entity.User,
+) ([]entity.Vault, error) {
+	vaultList, err := s.repository.FindAccessible(authUser.PermissionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return vaultList, nil
 }
 
-func (s *Service) DecryptedRecordList(authUser *entity.User, vaultId string, keyPair *keyring.KeyPair) ([]entity.VaultRecord, error) {
+func (s *Service) DecryptedRecordList(
+	authUser *entity.User,
+	vaultId string,
+	keyPair *keyring.KeyPair,
+) ([]entity.VaultRecord, error) {
 	vaultId = strings.TrimSpace(vaultId)
 
 	if vaultId == "" {
@@ -88,23 +113,25 @@ func (s *Service) DecryptedRecordList(authUser *entity.User, vaultId string, key
 		return nil, ErrNotFound
 	}
 
-	// if keyPair == nil {
-	// 	panic("keyPair is nil")
-	// } else {
-	// 	panic(keyPair)
-	// }
-
-	vaultKey, err := s.vaultaccessService.GetVaultKey(vault.ID, authUser.PermissionID, keyPair)
+	vaultKey, err := s.vaultaccessService.GetVaultKey(
+		vault.ID,
+		authUser.PermissionID,
+		keyPair,
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	fileDB, err := s.vaultRecordDB.File(vault.ID, string(vaultKey))
+	fileDB, err := s.vaultRecordDB.File(
+		vault.ID,
+		string(vaultKey),
+	)
 	if err != nil {
 		return nil, err
 	}
 
 	var vaultRecord []entity.VaultRecord
+
 	if err = fileDB.FindAll(&vaultRecord); err != nil {
 		return nil, err
 	}
@@ -112,7 +139,10 @@ func (s *Service) DecryptedRecordList(authUser *entity.User, vaultId string, key
 	return vaultRecord, nil
 }
 
-func (s *Service) Update(id string, name string) (*entity.Vault, error) {
+func (s *Service) Update(
+	id string,
+	name string,
+) (*entity.Vault, error) {
 	id = strings.TrimSpace(id)
 	name = strings.TrimSpace(name)
 
@@ -142,7 +172,11 @@ func (s *Service) Update(id string, name string) (*entity.Vault, error) {
 	return vault, nil
 }
 
-func (s *Service) createUpdateRecord(authUser *entity.User, vaultId string, keyPair *keyring.KeyPair) (*database.DatabaseFile, error) {
+func (s *Service) createUpdateRecord(
+	authUser *entity.User,
+	vaultId string,
+	keyPair *keyring.KeyPair,
+) (*database.DatabaseFile, error) {
 	vaultId = strings.TrimSpace(vaultId)
 
 	if vaultId == "" {
@@ -154,31 +188,46 @@ func (s *Service) createUpdateRecord(authUser *entity.User, vaultId string, keyP
 		return nil, err
 	}
 
-	vaultKey, err := s.vaultaccessService.GetVaultKey(vault.ID, authUser.PermissionID, keyPair)
+	if vault == nil {
+		return nil, ErrNotFound
+	}
+
+	vaultKey, err := s.vaultaccessService.GetVaultKey(
+		vault.ID,
+		authUser.PermissionID,
+		keyPair,
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	fileDB, err := s.vaultRecordDB.File(vault.ID, string(vaultKey))
+	fileDB, err := s.vaultRecordDB.File(
+		vault.ID,
+		string(vaultKey),
+	)
 	if err != nil {
 		return nil, err
 	}
 
 	return fileDB, nil
-
 }
+
 func (s *Service) AppendRecord(
 	authUser *entity.User,
 	vaultId string,
 	vaultRecord *entity.VaultRecord,
 	keyPair *keyring.KeyPair,
 ) (*entity.VaultRecord, error) {
-	fileDB, err := s.createUpdateRecord(authUser, vaultId, keyPair)
+	fileDB, err := s.createUpdateRecord(
+		authUser,
+		vaultId,
+		keyPair,
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	err = fileDB.Insert(&vaultRecord)
+	err = fileDB.Insert(vaultRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -192,12 +241,16 @@ func (s *Service) UpdateRecord(
 	vaultRecord *entity.VaultRecord,
 	keyPair *keyring.KeyPair,
 ) (*entity.VaultRecord, error) {
-	fileDB, err := s.createUpdateRecord(authUser, vaultId, keyPair)
+	fileDB, err := s.createUpdateRecord(
+		authUser,
+		vaultId,
+		keyPair,
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	err = fileDB.Update(&vaultRecord)
+	err = fileDB.Update(vaultRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +258,10 @@ func (s *Service) UpdateRecord(
 	return vaultRecord, nil
 }
 
-func (s *Service) Delete(id string, password string) error {
+func (s *Service) Delete(
+	id string,
+	password string,
+) error {
 	id = strings.TrimSpace(id)
 
 	if id == "" {
@@ -225,7 +281,10 @@ func (s *Service) Delete(id string, password string) error {
 		return err
 	}
 
-	fileDB, err := s.vaultRecordDB.File(vault.ID, password)
+	fileDB, err := s.vaultRecordDB.File(
+		vault.ID,
+		password,
+	)
 	if err != nil {
 		return err
 	}

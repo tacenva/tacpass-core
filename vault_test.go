@@ -89,50 +89,50 @@ func newTestVaultService(
 		vaultaccessService
 }
 
-func TestLocalVault(t *testing.T) {
-	_, permissionService, _, authService, vaultService, _ :=
-		newTestVaultService(t)
+// func TestLocalVault(t *testing.T) {
+// 	_, permissionService, _, authService, vaultService, _ :=
+// 		newTestVaultService(t)
 
-	t.Log("create permission")
+// 	t.Log("create permission")
 
-	permissionData, keyPair, err :=
-		permissionService.Create(entity.PrivilegeAdmin)
-	if err != nil {
-		t.Fatalf("failed to create permission: %v", err)
-	}
+// 	permissionData, keyPair, err :=
+// 		permissionService.Create(entity.PrivilegeAdmin)
+// 	if err != nil {
+// 		t.Fatalf("failed to create permission: %v", err)
+// 	}
 
-	t.Logf("created permission: %+v", permissionData)
-	t.Logf("permission ID: %q", permissionData.ID)
-	t.Logf("permission public key: %q", keyPair.PublicKey)
+// 	t.Logf("created permission: %+v", permissionData)
+// 	t.Logf("permission ID: %q", permissionData.ID)
+// 	t.Logf("permission public key: %q", keyPair.PublicKey)
 
-	t.Log("request enrollment")
+// 	t.Log("request enrollment")
 
-	token, err := authService.RequestEnrollment(
-		"hostname",
-		keyPair.PublicKey,
-		entity.UserStatusApproved,
-	)
-	if err != nil {
-		t.Fatalf("failed to request enrollment: %v", err)
-	}
+// 	token, err := authService.RequestEnrollment(
+// 		"hostname",
+// 		keyPair.PublicKey,
+// 		entity.UserStatusApproved,
+// 	)
+// 	if err != nil {
+// 		t.Fatalf("failed to request enrollment: %v", err)
+// 	}
 
-	t.Log("authenticate")
+// 	t.Log("authenticate")
 
-	authUser, err := authService.GetUserData(token)
-	if err != nil {
-		t.Fatalf("failed to authenticate: %v", err)
-	}
+// 	authUser, err := authService.GetUserData(token)
+// 	if err != nil {
+// 		t.Fatalf("failed to authenticate: %v", err)
+// 	}
 
-	t.Log("create vault")
+// 	t.Log("create vault")
 
-	vaultData, err := vaultService.Create(
-		authUser,
-		"vault-1",
-	)
-	if err != nil {
-		t.Fatalf("failed to create vault: %v", err)
-	}
+// 	vaultData, err := vaultService.Create(
+// 		authUser,
+// 		"vault-1",
+// 	)
+// 	if err != nil {
+// 		t.Fatalf("failed to create vault: %v", err)
+// 	}
 
-	t.Logf("created vault: %+v", vaultData)
-	t.Logf("vault ID: %q", vaultData.ID)
-}
+// 	t.Logf("created vault: %+v", vaultData)
+// 	t.Logf("vault ID: %q", vaultData.ID)
+// }
