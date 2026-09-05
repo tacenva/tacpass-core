@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/tacenva/tacpass-core/entity"
+	"github.com/tacenva/tacpass-core/util/credential"
 	"github.com/tacenva/tacpass-core/util/keyring"
 )
 
@@ -72,6 +73,11 @@ func (s *Service) Get(id string) (*entity.Permission, error) {
 	return permission, nil
 }
 
+func (s *Service) GetByToken(authToken string) (*entity.Permission, error) {
+	authTokenHash := credential.Hash(authToken)
+	return s.repository.FindByToken(authTokenHash)
+}
+
 func (s *Service) GetByPublicKey(publicKey string) (*entity.Permission, error) {
 	publicKey = strings.TrimSpace(publicKey)
 
@@ -95,37 +101,8 @@ func (s *Service) GetByPublicKey(publicKey string) (*entity.Permission, error) {
 	return permission, nil
 }
 
-// func (s *Service) GetByToken(accessToken string) (*entity.Permission, error) {
-// 	accessToken = strings.TrimSpace(accessToken)
-
-// 	if accessToken == "" {
-// 		return nil, ErrTokenEmpty
-// 	}
-
-// 	accessTokenHash := credential.Hash(accessToken)
-
-// 	permission, err := s.repository.FindByToken(accessTokenHash)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	if permission == nil {
-// 		return nil, ErrNotFound
-// 	}
-
-// 	if permission.Revoked {
-// 		return nil, ErrRevoked
-// 	}
-
-// 	return permission, nil
-// }
-
 func (s *Service) List() ([]entity.Permission, error) {
 	return s.repository.FindAll()
-}
-
-func (s *Service) VaultList(permissionId string) ([]entity.VaultAccess, error) {
-	return s.repository.GetVault(permissionId)
 }
 
 func (s *Service) ChangePrivilege(id string, privilege entity.Privilege) error {

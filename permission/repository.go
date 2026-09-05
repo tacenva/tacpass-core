@@ -60,40 +60,25 @@ func (r *repository) FindByPublicKey(publicKey string) (*entity.Permission, erro
 	return &permission, nil
 }
 
-func (r *repository) GetVault(permissionId string) ([]entity.VaultAccess, error) {
+func (r *repository) FindByToken(tokenHash string) (*entity.Permission, error) {
 	var permission entity.Permission
 
 	err := r.db.
-		Preload("Accesses").
-		Preload("Accesses.Vault").
-		First(&permission, "id = ?", permissionId).
+		Joins("JOIN users on users.permission_id = permissions.id").
+		Where("users.token = ?", tokenHash).
+		First(&permission).
 		Error
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
 
 	if err != nil {
 		return nil, err
 	}
 
-	return permission.Accesses, nil
+	return &permission, nil
 }
-
-// func (r *repository) FindByToken(tokenHash string) (*entity.Permission, error) {
-// 	var permission entity.Permission
-
-// 	err := r.db.
-// 		Where("token = ?", tokenHash).
-// 		First(&permission).
-// 		Error
-
-// 	if errors.Is(err, gorm.ErrRecordNotFound) {
-// 		return nil, nil
-// 	}
-
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	return &permission, nil
-// }
 
 func (r *repository) FindAll() ([]entity.Permission, error) {
 	var permissions []entity.Permission

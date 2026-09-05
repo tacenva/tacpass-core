@@ -40,11 +40,12 @@ func (r *repository) FindByID(id string) (*entity.Vault, error) {
 	return &vault, nil
 }
 
-func (r *repository) FindAll() ([]entity.Vault, error) {
+func (r *repository) FindAccessible(permissionID string) ([]entity.Vault, error) {
 	var vaults []entity.Vault
 
 	err := r.db.
-		Order("name ASC").
+		Joins("JOIN vault_accesses ON vault_accesses.vault_id = vaults.id").
+		Where("vault_accesses.permission_id = ?", permissionID).
 		Find(&vaults).
 		Error
 

@@ -44,6 +44,7 @@ func (r *repository) FindByToken(tokenHash string) (*entity.User, error) {
 	var user entity.User
 
 	err := r.db.
+		Preload("Permission").
 		Where("token = ?", tokenHash).
 		First(&user).
 		Error

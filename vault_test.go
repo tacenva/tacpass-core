@@ -73,7 +73,7 @@ func newTestVaultService(
 
 	// vault
 	vaultRepository := vault.NewRepository(db)
-	tacenvaDB := database.New("vault/")
+	tacenvaDB := database.New("test/")
 
 	vaultService := vault.NewService(
 		vaultRepository,
@@ -127,7 +127,7 @@ func TestLocalVault(t *testing.T) {
 
 	vaultData, err := vaultService.Create(
 		"vault-1",
-		permissionData.ID,
+		token,
 	)
 	if err != nil {
 		t.Fatalf("failed to create vault: %v", err)

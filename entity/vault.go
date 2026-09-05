@@ -8,7 +8,7 @@ import (
 )
 
 type VaultRecord struct {
-	ID        string    `json:"_"`
+	ID        string    `json:"-"`
 	Name      string    `json:"name"`
 	Endpoint  string    `json:"endpoint"`
 	Password  string    `json:"password"`

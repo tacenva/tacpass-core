@@ -97,78 +97,12 @@ func (s *Service) GetByToken(token string) (*entity.User, error) {
 		return nil, ErrNotFound
 	}
 
-	switch user.Status {
-	case entity.UserStatusPending:
-		return nil, ErrPending
-
-	case entity.UserStatusRevoked:
-		return nil, ErrRevoked
-
-	case entity.UserStatusApproved:
-		return user, nil
-
-	default:
-		return nil, ErrStatusInvalid
-	}
+	return user, nil
 }
 
 func (s *Service) List() ([]entity.User, error) {
 	return s.repository.FindAll()
 }
-
-// func (s *Service) Approve(id string) error {
-// 	id = strings.TrimSpace(id)
-
-// 	if id == "" {
-// 		return ErrNotFound
-// 	}
-
-// 	user, err := s.repository.FindByID(id)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	if user == nil {
-// 		return ErrNotFound
-// 	}
-
-// 	if user.Status == entity.UserStatusRevoked {
-// 		return ErrRevoked
-// 	}
-
-// 	if user.Status == entity.UserStatusApproved {
-// 		return nil
-// 	}
-
-// 	user.Status = entity.UserStatusApproved
-
-// 	return s.repository.Update(user)
-// }
-
-// func (s *Service) Revoke(id string) error {
-// 	id = strings.TrimSpace(id)
-
-// 	if id == "" {
-// 		return ErrNotFound
-// 	}
-
-// 	user, err := s.repository.FindByID(id)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	if user == nil {
-// 		return ErrNotFound
-// 	}
-
-// 	if user.Status == entity.UserStatusRevoked {
-// 		return nil
-// 	}
-
-// 	user.Status = entity.UserStatusRevoked
-
-// 	return s.repository.Update(user)
-// }
 
 func (s *Service) Update(
 	id string,
@@ -217,7 +151,6 @@ func (s *Service) UpdateStatus(
 	case entity.UserStatusPending,
 		entity.UserStatusApproved,
 		entity.UserStatusRevoked:
-		// valid
 
 	default:
 		return nil, ErrStatusInvalid

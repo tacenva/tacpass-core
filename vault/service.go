@@ -38,7 +38,7 @@ func NewService(
 	}
 }
 
-func (s *Service) Create(name string, permissionId string) (*entity.Vault, error) {
+func (s *Service) Create(name string, authToken string) (*entity.Vault, error) {
 	name = strings.TrimSpace(name)
 
 	if name == "" {
@@ -53,7 +53,7 @@ func (s *Service) Create(name string, permissionId string) (*entity.Vault, error
 		return nil, err
 	}
 
-	permission, err := s.permissionService.Get(permissionId)
+	permission, err := s.permissionService.GetByToken(authToken)
 	if err != nil {
 		return nil, err
 	}
@@ -76,41 +76,44 @@ func (s *Service) Create(name string, permissionId string) (*entity.Vault, error
 	return vault, nil
 }
 
-func (s *Service) Get(id string, vaultKey string) (*entity.Vault, []entity.VaultRecord, error) {
-	id = strings.TrimSpace(id)
-
-	if id == "" {
-		return nil, nil, ErrNotFound
+func (s *Service) VaultList(authToken string) ([]entity.Vault, error) {
+	permission, err := s.permissionService.GetByToken(authToken)
+	if err != nil {
+		return nil, err
 	}
 
-	vault, err := s.repository.FindByID(id)
+	return s.repository.FindAccessible(permission.ID)
+}
+
+func (s *Service) RecordList(vaultId string, privateKey string) ([]entity.VaultRecord, error) {
+	vaultId = strings.TrimSpace(vaultId)
+
+	if vaultId == "" {
+		return nil, ErrNotFound
+	}
+
+	vault, err := s.repository.FindByID(vaultId)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	if vault == nil {
-		return nil, nil, ErrNotFound
+		return nil, ErrNotFound
 	}
 
-	fileDB, err := s.vaultRecordDB.File(vault.ID, vaultKey)
+	// s.vaultaccessService.Get()
+
+	fileDB, err := s.vaultRecordDB.File(vault.ID, privateKey)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	var vaultRecord []entity.VaultRecord
 	if err = fileDB.FindAll(&vaultRecord); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	return vault, vaultRecord, nil
-}
-
-func (s *Service) List(permissionId string) ([]entity.Vault, error) {
-	return s.repository.FindAll()
-}
-
-func (s *Service) ListByPermissionId(permissionId string) ([]entity.VaultAccess, error) {
-	return s.permissionService.VaultList(permissionId)
+	return vaultRecord, nil
 }
 
 func (s *Service) Update(id string, name string) (*entity.Vault, error) {
