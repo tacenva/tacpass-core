@@ -55,7 +55,7 @@ func (s *Service) Initialize(hostname string) (string, *keyring.KeyPair, error) 
 	return token, keyPair, err
 }
 
-func (s *Service) Authenticate(token string) error {
+func (s *Service) GetStatus(token string) error {
 	userData, err := s.userService.GetByToken(token)
 	if err != nil {
 		return err

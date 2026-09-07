@@ -6,12 +6,12 @@ import (
 )
 
 type VaultAccess struct {
-	ID           string `json:"-" gorm:"type:varchar(26);primaryKey"`
-	VaultID      string `json:"-" gorm:"type:varchar(26);not null;uniqueIndex:idx_vault_permission"`
+	ID           string `json:"id" gorm:"type:varchar(26);primaryKey"`
+	VaultID      string `json:"vault_id" gorm:"type:varchar(26);not null;uniqueIndex:idx_vault_permission"`
 	PermissionID string `json:"-" gorm:"type:varchar(26);not null;uniqueIndex:idx_vault_permission"`
-	VaultKey     string `json:"-" gorm:"type:text;not null"`
+	VaultKey     string `json:"vault_key" gorm:"type:text;not null"`
 
-	Vault      Vault      `json:"-" gorm:"foreignKey:VaultID;references:ID;constraint:OnDelete:CASCADE"`
+	Vault      Vault      `json:"vault" gorm:"foreignKey:VaultID;references:ID;constraint:OnDelete:CASCADE"`
 	Permission Permission `json:"-" gorm:"foreignKey:PermissionID;references:ID;constraint:OnDelete:CASCADE"`
 }
 

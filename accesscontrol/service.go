@@ -22,6 +22,14 @@ func NewService(
 	}
 }
 
+func (s *Service) Get(id string) (*entity.Permission, error) {
+	return s.permissionService.Get(id)
+}
+
+func (s *Service) GetByPublicKey(publicKey string) (*entity.Permission, error) {
+	return s.permissionService.GetByPublicKey(publicKey)
+}
+
 func (s *Service) List() ([]entity.Permission, error) {
 	return s.permissionService.List()
 }

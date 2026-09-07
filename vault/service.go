@@ -18,23 +18,23 @@ var (
 
 type Service struct {
 	repository         *repository
-	vaultRecordDB      *database.DB
+	tacenvaDB          *database.DB
 	vaultaccessService *vaultaccess.Service
 }
 
 func NewService(
 	repository *repository,
-	vaultRecordDB *database.DB,
+	tacenvaDB *database.DB,
 	vaultaccessService *vaultaccess.Service,
 ) *Service {
 	return &Service{
 		repository:         repository,
-		vaultRecordDB:      vaultRecordDB,
+		tacenvaDB:          tacenvaDB,
 		vaultaccessService: vaultaccessService,
 	}
 }
 
-func (s *Service) Create(authUser *entity.User, name string, keyPair *keyring.KeyPair) (*entity.Vault, error) {
+func (s *Service) Create(authUser *entity.User, name string, keyPair *keyring.KeyPair) (*entity.VaultAccess, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, ErrNameEmpty
@@ -61,7 +61,7 @@ func (s *Service) Create(authUser *entity.User, name string, keyPair *keyring.Ke
 	}
 
 	// Yang disimpan di VaultAccess harus ciphertext.
-	_, err = s.vaultaccessService.Create(
+	vaultAccessData, err := s.vaultaccessService.Create(
 		vault.ID,
 		authUser.PermissionID,
 		sealedVaultKey,
@@ -71,7 +71,7 @@ func (s *Service) Create(authUser *entity.User, name string, keyPair *keyring.Ke
 	}
 
 	// Database file tetap menggunakan RAW vault key.
-	_, err = s.vaultRecordDB.File(
+	_, err = s.tacenvaDB.File(
 		vault.ID,
 		string(vaultKey),
 	)
@@ -79,18 +79,20 @@ func (s *Service) Create(authUser *entity.User, name string, keyPair *keyring.Ke
 		return nil, err
 	}
 
-	return vault, nil
+	vaultAccessData.Vault = *vault
+
+	return vaultAccessData, nil
 }
 
-func (s *Service) VaultList(
+func (s *Service) VaultAccessList(
 	authUser *entity.User,
-) ([]entity.Vault, error) {
-	vaultList, err := s.repository.FindAccessible(authUser.PermissionID)
+) ([]entity.VaultAccess, error) {
+	vaulaccesstist, err := s.repository.FindAccessible(authUser.PermissionID)
 	if err != nil {
 		return nil, err
 	}
 
-	return vaultList, nil
+	return vaulaccesstist, nil
 }
 
 func (s *Service) DecryptedRecordList(
@@ -122,7 +124,7 @@ func (s *Service) DecryptedRecordList(
 		return nil, err
 	}
 
-	fileDB, err := s.vaultRecordDB.File(
+	fileDB, err := s.tacenvaDB.File(
 		vault.ID,
 		string(vaultKey),
 	)
@@ -201,7 +203,7 @@ func (s *Service) createUpdateRecord(
 		return nil, err
 	}
 
-	fileDB, err := s.vaultRecordDB.File(
+	fileDB, err := s.tacenvaDB.File(
 		vault.ID,
 		string(vaultKey),
 	)
@@ -227,7 +229,7 @@ func (s *Service) AppendRecord(
 		return nil, err
 	}
 
-	err = fileDB.Insert(vaultRecord)
+	_, err = fileDB.Insert(vaultRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -281,7 +283,7 @@ func (s *Service) Delete(
 		return err
 	}
 
-	fileDB, err := s.vaultRecordDB.File(
+	fileDB, err := s.tacenvaDB.File(
 		vault.ID,
 		password,
 	)

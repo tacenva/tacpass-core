@@ -58,6 +58,24 @@ func (s *Service) Create(
 	return vaultAccess, nil
 }
 
+func (s *Service) IsVaultAccesible(
+	vaultID string,
+	permissionID string,
+) (bool, error) {
+	vaultAccess, err := s.repository.FindByVaultAndPermission(
+		vaultID,
+		permissionID,
+	)
+	if err != nil {
+		return false, err
+	}
+
+	if vaultAccess == nil {
+		return false, nil
+	}
+	return true, nil
+}
+
 func (s *Service) GetVaultKey(
 	vaultID string,
 	permissionID string,
