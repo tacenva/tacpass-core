@@ -40,21 +40,22 @@ func (r *repository) FindByID(id string) (*entity.Vault, error) {
 	return &vault, nil
 }
 
-func (r *repository) FindAccessible(permissionID string) ([]entity.VaultAccess, error) {
-	var vaultaccess []entity.VaultAccess
+func (r *repository) FindAccessible(
+	permissionID string,
+) ([]entity.VaultAccess, error) {
+	var vaultAccessList []entity.VaultAccess
 
 	err := r.db.
-		Preload("vault").
-		Joins("JOIN vault ON vault.vault_id = vault_accesses.id").
-		Where("vault_accesses.permission_id = ?", permissionID).
-		Find(&vaultaccess).
+		Where("permission_id = ?", permissionID).
+		Preload("Vault").
+		Find(&vaultAccessList).
 		Error
 
 	if err != nil {
 		return nil, err
 	}
 
-	return vaultaccess, nil
+	return vaultAccessList, nil
 }
 
 func (r *repository) Update(vault *entity.Vault) error {

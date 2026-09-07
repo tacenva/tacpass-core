@@ -40,3 +40,9 @@ func FromKeys(publicKey, privateKey string) *KeyPair {
 		PrivateKey: privateKey,
 	}
 }
+
+func FromPublicKey(publicKey string) *KeyPair {
+	return &KeyPair{
+		PublicKey: publicKey,
+	}
+}
