@@ -1,10 +1,17 @@
 package accesscontrol
 
 import (
+	"errors"
+
 	"github.com/tacenva/tacpass-core/entity"
 	"github.com/tacenva/tacpass-core/permission"
 	"github.com/tacenva/tacpass-core/user"
 	"github.com/tacenva/tacpass-core/util/keyring"
+)
+
+var (
+	ErrNotFound   = errors.New("not found")
+	ErrPermission = errors.New("permission denied")
 )
 
 type Service struct {
@@ -22,31 +29,82 @@ func NewService(
 	}
 }
 
-func (s *Service) Get(id string) (*entity.Permission, error) {
+func (s *Service) Get(
+	authUser *entity.User,
+	id string,
+) (*entity.Permission, error) {
+	if !authUser.HasAdminPermission() {
+		return nil, ErrPermission
+	}
+
 	return s.permissionService.Get(id)
 }
 
-func (s *Service) List() ([]entity.Permission, error) {
+func (s *Service) List(
+	authUser *entity.User,
+) ([]entity.Permission, error) {
+	if !authUser.HasAdminPermission() {
+		return nil, ErrPermission
+	}
+
 	return s.permissionService.List()
 }
 
-func (s *Service) Create(name string, privilege entity.Privilege) (*entity.Permission, *keyring.KeyPair, error) {
+func (s *Service) Create(
+	authUser *entity.User,
+	name string,
+	privilege entity.Privilege,
+) (*entity.Permission, *keyring.KeyPair, error) {
+	if !authUser.HasAdminPermission() {
+		return nil, nil, ErrPermission
+	}
+
 	return s.permissionService.Create(name, privilege)
 }
 
-func (s *Service) ChangeName(id string, name string) error {
+func (s *Service) ChangeName(
+	authUser *entity.User,
+	id string,
+	name string,
+) error {
+	if !authUser.HasAdminPermission() {
+		return ErrPermission
+	}
+
 	return s.permissionService.ChangeName(id, name)
 }
 
-func (s *Service) ChangePrivilege(id string, privilege entity.Privilege) error {
+func (s *Service) ChangePrivilege(
+	authUser *entity.User,
+	id string,
+	privilege entity.Privilege,
+) error {
+	if !authUser.HasAdminPermission() {
+		return ErrPermission
+	}
+
 	return s.permissionService.ChangePrivilege(id, privilege)
 }
 
-func (s *Service) Revoke(id string) error {
+func (s *Service) Revoke(
+	authUser *entity.User,
+	id string,
+) error {
+	if !authUser.HasAdminPermission() {
+		return ErrPermission
+	}
+
 	return s.permissionService.Revoke(id)
 }
 
-func (s *Service) UserList(permissionId string) ([]entity.User, error) {
+func (s *Service) UserList(
+	authUser *entity.User,
+	permissionId string,
+) ([]entity.User, error) {
+	if !authUser.HasAdminPermission() {
+		return nil, ErrPermission
+	}
+
 	permission, err := s.permissionService.Get(permissionId)
 	if err != nil {
 		return nil, err
@@ -55,10 +113,30 @@ func (s *Service) UserList(permissionId string) ([]entity.User, error) {
 	return permission.Users, nil
 }
 
-func (s *Service) ApproveUser(userId string) (*entity.User, error) {
-	return s.userService.UpdateStatus(userId, entity.UserStatusApproved)
+func (s *Service) ApproveUser(
+	authUser *entity.User,
+	userId string,
+) (*entity.User, error) {
+	if !authUser.HasAdminPermission() {
+		return nil, ErrPermission
+	}
+
+	return s.userService.UpdateStatus(
+		userId,
+		entity.UserStatusApproved,
+	)
 }
 
-func (s *Service) RevokeUser(userId string) (*entity.User, error) {
-	return s.userService.UpdateStatus(userId, entity.UserStatusRevoked)
+func (s *Service) RevokeUser(
+	authUser *entity.User,
+	userId string,
+) (*entity.User, error) {
+	if !authUser.HasAdminPermission() {
+		return nil, ErrPermission
+	}
+
+	return s.userService.UpdateStatus(
+		userId,
+		entity.UserStatusRevoked,
+	)
 }

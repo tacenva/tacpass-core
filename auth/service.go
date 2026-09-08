@@ -21,7 +21,7 @@ func NewService(
 	}
 }
 
-func (s *Service) RequestEnrollment(
+func (s *Service) Enroll(
 	hostname string,
 	publicKey string,
 	userStatus entity.UserStatus,
@@ -37,55 +37,6 @@ func (s *Service) RequestEnrollment(
 	}
 
 	return token, nil
-}
-
-// func (s *Service) Initialize(name string, hostname string) (string, *keyring.KeyPair, error) {
-// 	_, keyPair, err := s.permissionService.Create(name, entity.PrivilegeAdmin)
-// 	if err != nil {
-// 		return "", nil, err
-// 	}
-
-// 	token, err := s.RequestEnrollment(
-// 		hostname,
-// 		keyPair.PublicKey,
-// 		entity.UserStatusApproved,
-// 	)
-
-// 	return token, keyPair, err
-// }
-
-func (s *Service) GetStatus(token string) error {
-	userData, err := s.userService.GetByToken(token)
-	if err != nil {
-		return err
-	}
-
-	if userData.Permission.Revoked {
-		return permission.ErrRevoked
-	}
-
-	switch userData.Status {
-	case entity.UserStatusApproved:
-		return nil
-
-	case entity.UserStatusPending:
-		return user.ErrPending
-
-	case entity.UserStatusRevoked:
-		return user.ErrRevoked
-
-	default:
-		return user.ErrStatusInvalid
-	}
-}
-
-func (s *Service) GetPermission(authToken string) (*entity.Permission, error) {
-	userData, err := s.userService.GetByToken(authToken)
-	if err != nil {
-		return nil, err
-	}
-
-	return &userData.Permission, nil
 }
 
 func (s *Service) GetUserData(token string) (*entity.User, error) {

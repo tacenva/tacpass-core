@@ -14,7 +14,7 @@ const (
 )
 
 type User struct {
-	ID           string     `json:"-" gorm:"type:varchar(26);primaryKey"`
+	ID           string     `json:"id" gorm:"type:varchar(26);primaryKey"`
 	PermissionID string     `json:"permission_id" gorm:"type:varchar(26);not null"`
 	Hostname     string     `json:"hostname" gorm:"type:varchar(50);not null"`
 	Token        string     `json:"token" gorm:"type:varchar(128);not null"`
@@ -23,9 +23,32 @@ type User struct {
 	Permission Permission `json:"permission" gorm:"foreignKey:PermissionID;references:ID"`
 }
 
-func (p *User) BeforeCreate(tx *gorm.DB) error {
-	if p.ID == "" {
-		p.ID = ulid.Make().String()
+func (u *User) HasWritePermission() bool {
+	p := u.Permission.Privilege
+
+	switch p {
+	case PrivilegeAdmin,
+		PrivilegeWrite:
+		return true
+	default:
+		return false
+	}
+}
+
+func (u *User) HasAdminPermission() bool {
+	p := u.Permission.Privilege
+
+	switch p {
+	case PrivilegeAdmin:
+		return true
+	default:
+		return false
+	}
+}
+
+func (u *User) BeforeCreate(tx *gorm.DB) error {
+	if u.ID == "" {
+		u.ID = ulid.Make().String()
 	}
 
 	return nil

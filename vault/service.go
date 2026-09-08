@@ -12,8 +12,9 @@ import (
 )
 
 var (
-	ErrNotFound  = errors.New("vault not found")
-	ErrNameEmpty = errors.New("vault name cannot be empty")
+	ErrNotFound   = errors.New("vault not found")
+	ErrNameEmpty  = errors.New("vault name cannot be empty")
+	ErrPermission = errors.New("permission denied")
 )
 
 type Service struct {
@@ -38,6 +39,10 @@ func (s *Service) Create(
 	authUser *entity.User,
 	name string,
 ) (*entity.VaultAccess, error) {
+	if !authUser.HasWritePermission() {
+		return nil, ErrPermission
+	}
+
 	name = strings.TrimSpace(name)
 
 	if name == "" {
@@ -109,9 +114,14 @@ func (s *Service) VaultAccessList(
 }
 
 func (s *Service) Update(
+	authUser *entity.User,
 	id string,
 	name string,
 ) (*entity.Vault, error) {
+	if !authUser.HasWritePermission() {
+		return nil, ErrPermission
+	}
+
 	id = strings.TrimSpace(id)
 	name = strings.TrimSpace(name)
 
@@ -142,9 +152,14 @@ func (s *Service) Update(
 }
 
 func (s *Service) Delete(
+	authUser *entity.User,
 	id string,
 	password string,
 ) error {
+	if !authUser.HasWritePermission() {
+		return ErrPermission
+	}
+
 	id = strings.TrimSpace(id)
 
 	if id == "" {
