@@ -26,16 +26,16 @@ func (s *Service) Get(id string) (*entity.Permission, error) {
 	return s.permissionService.Get(id)
 }
 
-func (s *Service) GetByPublicKey(publicKey string) (*entity.Permission, error) {
-	return s.permissionService.GetByPublicKey(publicKey)
-}
-
 func (s *Service) List() ([]entity.Permission, error) {
 	return s.permissionService.List()
 }
 
-func (s *Service) Create(privilege entity.Privilege) (*entity.Permission, *keyring.KeyPair, error) {
-	return s.permissionService.Create(privilege)
+func (s *Service) Create(name string, privilege entity.Privilege) (*entity.Permission, *keyring.KeyPair, error) {
+	return s.permissionService.Create(name, privilege)
+}
+
+func (s *Service) ChangeName(id string, name string) error {
+	return s.permissionService.ChangeName(id, name)
 }
 
 func (s *Service) ChangePrivilege(id string, privilege entity.Privilege) error {

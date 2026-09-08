@@ -4,7 +4,6 @@ import (
 	"github.com/tacenva/tacpass-core/entity"
 	"github.com/tacenva/tacpass-core/permission"
 	"github.com/tacenva/tacpass-core/user"
-	"github.com/tacenva/tacpass-core/util/keyring"
 )
 
 type Service struct {
@@ -40,20 +39,20 @@ func (s *Service) RequestEnrollment(
 	return token, nil
 }
 
-func (s *Service) Initialize(hostname string) (string, *keyring.KeyPair, error) {
-	_, keyPair, err := s.permissionService.Create(entity.PrivilegeAdmin)
-	if err != nil {
-		return "", nil, err
-	}
+// func (s *Service) Initialize(name string, hostname string) (string, *keyring.KeyPair, error) {
+// 	_, keyPair, err := s.permissionService.Create(name, entity.PrivilegeAdmin)
+// 	if err != nil {
+// 		return "", nil, err
+// 	}
 
-	token, err := s.RequestEnrollment(
-		hostname,
-		keyPair.PublicKey,
-		entity.UserStatusApproved,
-	)
+// 	token, err := s.RequestEnrollment(
+// 		hostname,
+// 		keyPair.PublicKey,
+// 		entity.UserStatusApproved,
+// 	)
 
-	return token, keyPair, err
-}
+// 	return token, keyPair, err
+// }
 
 func (s *Service) GetStatus(token string) error {
 	userData, err := s.userService.GetByToken(token)

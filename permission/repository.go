@@ -21,7 +21,7 @@ func (r *repository) Create(permission *entity.Permission) error {
 	return r.db.Create(permission).Error
 }
 
-func (r *repository) FindByID(id string) (*entity.Permission, error) {
+func (r *repository) Find(id string) (*entity.Permission, error) {
 	var permission entity.Permission
 
 	err := r.db.
@@ -60,26 +60,6 @@ func (r *repository) FindByPublicKey(publicKey string) (*entity.Permission, erro
 	return &permission, nil
 }
 
-func (r *repository) FindByToken(tokenHash string) (*entity.Permission, error) {
-	var permission entity.Permission
-
-	err := r.db.
-		Joins("JOIN users on users.permission_id = permissions.id").
-		Where("users.token = ?", tokenHash).
-		First(&permission).
-		Error
-
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &permission, nil
-}
-
 func (r *repository) FindAll() ([]entity.Permission, error) {
 	var permissions []entity.Permission
 
@@ -100,6 +80,7 @@ func (r *repository) Update(permission *entity.Permission) error {
 		Model(&entity.Permission{}).
 		Where("id = ?", permission.ID).
 		Updates(map[string]any{
+			"name":      permission.Name,
 			"privilege": permission.Privilege,
 			"revoked":   permission.Revoked,
 		}).
