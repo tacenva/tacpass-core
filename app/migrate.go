@@ -1,4 +1,4 @@
-package tacpass_core
+package app
 
 import (
 	"github.com/tacenva/tacpass-core/entity"
