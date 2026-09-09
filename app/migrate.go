@@ -6,6 +6,10 @@ import (
 )
 
 func Migrate(db *gorm.DB) error {
+	if err := db.Exec("PRAGMA foreign_keys = ON").Error; err != nil {
+		return err
+	}
+
 	return db.AutoMigrate(
 		&entity.Permission{},
 		&entity.User{},
