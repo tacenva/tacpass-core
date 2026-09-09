@@ -90,6 +90,7 @@ func (s *Service) Create(
 	_, err = s.tacenvaDB.File(
 		vault.ID,
 		vaultKey,
+		database.FileModeOpenOrCreate,
 	)
 	if err != nil {
 		return nil, err
