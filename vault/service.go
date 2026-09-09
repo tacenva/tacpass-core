@@ -154,7 +154,6 @@ func (s *Service) Update(
 func (s *Service) Delete(
 	authUser *entity.User,
 	id string,
-	password string,
 ) error {
 	if !authUser.HasWritePermission() {
 		return ErrPermission
@@ -175,19 +174,11 @@ func (s *Service) Delete(
 		return ErrNotFound
 	}
 
-	if err = s.repository.Delete(id); err != nil {
+	if err := s.tacenvaDB.Delete(vault.ID); err != nil {
 		return err
 	}
 
-	fileDB, err := s.tacenvaDB.File(
-		vault.ID,
-		password,
-	)
-	if err != nil {
-		return err
-	}
-
-	if _, err = fileDB.Delete(vault.ID); err != nil {
+	if err := s.repository.Delete(vault.ID); err != nil {
 		return err
 	}
 

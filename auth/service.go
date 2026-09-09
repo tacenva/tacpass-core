@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"os"
+
 	"github.com/tacenva/tacpass-core/entity"
 	"github.com/tacenva/tacpass-core/permission"
 	"github.com/tacenva/tacpass-core/user"
@@ -22,21 +24,26 @@ func NewService(
 }
 
 func (s *Service) Enroll(
-	hostname string,
+	userHostname string,
 	publicKey string,
 	userStatus entity.UserStatus,
-) (string, error) {
+) (string, string, error) {
 	permission, err := s.permissionService.GetByPublicKey(publicKey)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
-	_, token, err := s.userService.Create(hostname, permission.ID, userStatus)
+	_, token, err := s.userService.Create(userHostname, permission.ID, userStatus)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
-	return token, nil
+	sotHostname, err := os.Hostname()
+	if err != nil {
+		return "", "", err
+	}
+
+	return sotHostname, token, nil
 }
 
 func (s *Service) GetUserData(token string) (*entity.User, error) {

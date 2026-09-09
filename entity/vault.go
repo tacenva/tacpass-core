@@ -8,7 +8,7 @@ import (
 )
 
 type VaultRecord struct {
-	ID        string    `json:"-"`
+	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	Endpoint  string    `json:"endpoint"`
 	Password  string    `json:"password"`
@@ -16,7 +16,7 @@ type VaultRecord struct {
 }
 
 type Vault struct {
-	ID   string `json:"-" gorm:"type:varchar(26);primaryKey"`
+	ID   string `json:"id" gorm:"type:varchar(26);primaryKey"`
 	Name string `json:"name" gorm:"type:varchar(255);not null"`
 }
 
