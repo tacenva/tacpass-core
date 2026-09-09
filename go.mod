@@ -4,7 +4,7 @@ go 1.26.5
 
 require (
 	github.com/oklog/ulid/v2 v2.1.2
-	github.com/tacenva/database v0.1.0
+	github.com/tacenva/database v0.2.0
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.2
 )
