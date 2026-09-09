@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/tacenva/tacpass-core/entity"
-	"github.com/tacenva/tacpass-core/util/keyring"
 )
 
 var (
@@ -74,38 +73,6 @@ func (s *Service) IsVaultAccesible(
 		return false, nil
 	}
 	return true, nil
-}
-
-func (s *Service) GetVaultKey(
-	vaultID string,
-	permissionID string,
-	keyPair *keyring.KeyPair,
-) ([]byte, error) {
-	vaultID = strings.TrimSpace(vaultID)
-	permissionID = strings.TrimSpace(permissionID)
-
-	if vaultID == "" {
-		return nil, ErrVaultIDEmpty
-	}
-
-	if permissionID == "" {
-		return nil, ErrPermissionIDEmpty
-	}
-
-	vaultAccess, err := s.repository.FindByVaultAndPermission(
-		vaultID,
-		permissionID,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	vaultKey, err := keyPair.Open(vaultAccess.VaultKey)
-	if err != nil {
-		return nil, err
-	}
-
-	return vaultKey, nil
 }
 
 func (s *Service) List() ([]entity.VaultAccess, error) {

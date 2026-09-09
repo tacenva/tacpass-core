@@ -16,8 +16,9 @@ type VaultRecord struct {
 }
 
 type Vault struct {
-	ID   string `json:"id" gorm:"type:varchar(26);primaryKey"`
-	Name string `json:"name" gorm:"type:varchar(255);not null"`
+	ID        string    `json:"id" gorm:"type:varchar(26);primaryKey"`
+	Name      string    `json:"name" gorm:"type:varchar(255);not null"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 func (p *Vault) BeforeCreate(tx *gorm.DB) error {
