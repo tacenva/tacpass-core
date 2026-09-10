@@ -36,12 +36,9 @@ type TLSConfig struct {
 }
 
 func Default() *Config {
-	baseDir, _ := getBaseDir()
-
 	return &Config{
-		BaseDir: baseDir,
 		Server: ServerConfig{
-			Port: 9443,
+			Port: 49153,
 		},
 		TLS: TLSConfig{
 			CertFile: "certs/server.crt",
@@ -57,7 +54,11 @@ func (cfg *Config) Path(parts ...string) string {
 }
 
 func (cfg *Config) VaultDir() string {
-	return cfg.Path("node", cfg.SoTULID, "vault")
+	return cfg.Path(
+		NodeDirName,
+		cfg.SoTULID,
+		"vault",
+	)
 }
 
 func (cfg *Config) setSoTULID(sotULID string) error {
@@ -79,12 +80,9 @@ func (cfg *Config) setSoTULID(sotULID string) error {
 
 func (cfg *Config) Save() error {
 	if cfg.BaseDir == "" {
-		baseDir, err := getBaseDir()
-		if err != nil {
-			return err
-		}
-
-		cfg.BaseDir = baseDir
+		return fmt.Errorf(
+			"config base directory is required",
+		)
 	}
 
 	if err := os.MkdirAll(
@@ -105,7 +103,9 @@ func (cfg *Config) Save() error {
 		)
 	}
 
-	configPath := cfg.Path(ConfigFileName)
+	configPath := cfg.Path(
+		ConfigFileName,
+	)
 
 	if err := os.WriteFile(
 		configPath,
@@ -121,8 +121,8 @@ func (cfg *Config) Save() error {
 	return nil
 }
 
-func Load() (*Config, error) {
-	baseDir, err := getBaseDir()
+func Load(dev bool) (*Config, error) {
+	baseDir, err := getBaseDir(dev)
 	if err != nil {
 		return nil, err
 	}
@@ -158,8 +158,8 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
-func LoadOrCreate() (*Config, error) {
-	baseDir, err := getBaseDir()
+func LoadOrCreate(dev bool) (*Config, error) {
+	baseDir, err := getBaseDir(dev)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +170,7 @@ func LoadOrCreate() (*Config, error) {
 	)
 
 	if _, err := os.Stat(configPath); err == nil {
-		cfg, err := Load()
+		cfg, err := Load(dev)
 		if err != nil {
 			return nil, err
 		}
@@ -192,6 +192,7 @@ func LoadOrCreate() (*Config, error) {
 	}
 
 	cfg := Default()
+	cfg.BaseDir = baseDir
 
 	if err := cfg.setSoTULID(
 		ulid.Make().String(),
@@ -202,7 +203,7 @@ func LoadOrCreate() (*Config, error) {
 	return cfg, nil
 }
 
-func getBaseDir() (string, error) {
+func getBaseDir(dev bool) (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf(
@@ -211,8 +212,14 @@ func getBaseDir() (string, error) {
 		)
 	}
 
+	dirName := ConfigDirName
+
+	if dev {
+		dirName += "-dev"
+	}
+
 	return filepath.Join(
 		homeDir,
-		ConfigDirName,
+		dirName,
 	), nil
 }

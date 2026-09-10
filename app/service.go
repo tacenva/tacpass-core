@@ -46,6 +46,8 @@ func NewServices(
 	accessControlService := accesscontrol.NewService(
 		userService,
 		permissionService,
+		vaultAccessService,
+		vaultService,
 	)
 
 	authService := auth.NewService(

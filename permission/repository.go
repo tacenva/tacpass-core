@@ -44,17 +44,17 @@ func (r *repository) Find(id string) (*entity.Permission, error) {
 func (r *repository) FindAdmin() (*entity.Permission, error) {
 	var permission entity.Permission
 
-	err := r.db.
+	result := r.db.
 		Where("privilege = ?", entity.PrivilegeAdmin).
-		First(&permission).
-		Error
+		Limit(1).
+		Find(&permission)
 
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil
+	if result.Error != nil {
+		return nil, result.Error
 	}
 
-	if err != nil {
-		return nil, err
+	if result.RowsAffected == 0 {
+		return nil, nil
 	}
 
 	return &permission, nil

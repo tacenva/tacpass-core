@@ -8,7 +8,7 @@ import (
 type VaultAccess struct {
 	ID           string `json:"id" gorm:"type:varchar(26);primaryKey"`
 	VaultID      string `json:"vault_id" gorm:"type:varchar(26);not null;uniqueIndex:idx_vault_permission"`
-	PermissionID string `json:"-" gorm:"type:varchar(26);not null;uniqueIndex:idx_vault_permission"`
+	PermissionID string `json:"permission_id" gorm:"type:varchar(26);not null;uniqueIndex:idx_vault_permission"`
 	VaultKey     string `json:"vault_key" gorm:"type:text;not null"`
 
 	Vault      Vault      `json:"vault" gorm:"foreignKey:VaultID;references:ID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE"`

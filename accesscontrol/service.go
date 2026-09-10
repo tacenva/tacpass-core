@@ -7,6 +7,7 @@ import (
 	"github.com/tacenva/tacpass-core/permission"
 	"github.com/tacenva/tacpass-core/user"
 	"github.com/tacenva/tacpass-core/util/keyring"
+	"github.com/tacenva/tacpass-core/vault"
 	"github.com/tacenva/tacpass-core/vaultaccess"
 )
 
@@ -16,18 +17,23 @@ var (
 )
 
 type Service struct {
-	userService       *user.Service
-	permissionService *permission.Service
-	vaultAccess       *vaultaccess.Service
+	userService        *user.Service
+	permissionService  *permission.Service
+	vaultAccessService *vaultaccess.Service
+	vaultService       *vault.Service
 }
 
 func NewService(
 	userService *user.Service,
 	permissionService *permission.Service,
+	vaultAccessService *vaultaccess.Service,
+	vaultService *vault.Service,
 ) *Service {
 	return &Service{
-		userService:       userService,
-		permissionService: permissionService,
+		userService:        userService,
+		permissionService:  permissionService,
+		vaultAccessService: vaultAccessService,
+		vaultService:       vaultService,
 	}
 }
 
@@ -56,12 +62,22 @@ func (s *Service) Create(
 	authUser *entity.User,
 	name string,
 	privilege entity.Privilege,
-) (*entity.Permission, *keyring.KeyPair, error) {
+) ([]entity.VaultAccess, *entity.Permission, *keyring.KeyPair, error) {
 	if !authUser.HasAdminPermission() {
-		return nil, nil, ErrPermission
+		return nil, nil, nil, ErrPermission
 	}
 
-	return s.permissionService.Create(name, privilege)
+	vaultAccessList, err := s.vaultService.VaultAccessList(authUser)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	permissionData, keyPair, err := s.permissionService.Create(name, privilege)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	return vaultAccessList, permissionData, keyPair, err
 }
 
 func (s *Service) GrantPrivilege(
@@ -72,7 +88,7 @@ func (s *Service) GrantPrivilege(
 		return ErrPermission
 	}
 
-	_, err := s.vaultAccess.CreateBulk(vaultAccessList)
+	_, err := s.vaultAccessService.CreateBulk(vaultAccessList)
 	return err
 }
 
@@ -157,4 +173,18 @@ func (s *Service) RevokeUser(
 		userId,
 		entity.UserStatusRevoked,
 	)
+}
+
+func (s *Service) DeletePermission(
+	authUser *entity.User,
+	id string,
+) error {
+	if !authUser.HasAdminPermission() {
+		return ErrPermission
+	}
+
+	if authUser.PermissionID == id {
+		return ErrPermission
+	}
+	return s.permissionService.Delete(id)
 }
