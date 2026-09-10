@@ -20,8 +20,8 @@ type Permission struct {
 	PublicKey string    `json:"-" gorm:"type:text;not null"`
 	Revoked   bool      `json:"revoked" gorm:"not null;default:false"`
 
-	Users    []User        `json:"users,omitempty" gorm:"foreignKey:PermissionID"`
-	Accesses []VaultAccess `json:"-" gorm:"foreignKey:PermissionID;references:ID"`
+	Users    []User        `json:"users,omitempty" gorm:"foreignKey:PermissionID;references:ID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE"`
+	Accesses []VaultAccess `json:"-" gorm:"foreignKey:PermissionID;references:ID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE"`
 }
 
 func (p Privilege) IsValid() bool {

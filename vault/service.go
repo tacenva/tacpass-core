@@ -6,6 +6,7 @@ import (
 
 	"github.com/tacenva/database"
 	"github.com/tacenva/tacpass-core/entity"
+	"github.com/tacenva/tacpass-core/permission"
 	"github.com/tacenva/tacpass-core/util/credential"
 	"github.com/tacenva/tacpass-core/util/keyring"
 	"github.com/tacenva/tacpass-core/vaultaccess"
@@ -21,17 +22,20 @@ type Service struct {
 	repository         *repository
 	tacenvaDB          *database.DB
 	vaultaccessService *vaultaccess.Service
+	permissionService  *permission.Service
 }
 
 func NewService(
 	repository *repository,
 	tacenvaDB *database.DB,
 	vaultaccessService *vaultaccess.Service,
+	permissionService *permission.Service,
 ) *Service {
 	return &Service{
 		repository:         repository,
 		tacenvaDB:          tacenvaDB,
 		vaultaccessService: vaultaccessService,
+		permissionService:  permissionService,
 	}
 }
 
@@ -49,6 +53,16 @@ func (s *Service) Create(
 		return nil, ErrNameEmpty
 	}
 
+	vaultKey, err := credential.Generate(32)
+	if err != nil {
+		return nil, err
+	}
+
+	permissionList, err := s.permissionService.List()
+	if err != nil {
+		return nil, err
+	}
+
 	vault := &entity.Vault{
 		Name: name,
 	}
@@ -57,36 +71,31 @@ func (s *Service) Create(
 		return nil, err
 	}
 
-	// Raw key yang digunakan untuk database vault.
-	vaultKey, err := credential.Generate(32)
+	vaultAccessList := make([]entity.VaultAccess, 0, len(permissionList))
+
+	for _, permissionData := range permissionList {
+		keyPair := keyring.FromPublicKey(permissionData.PublicKey)
+
+		sealedVaultKey, err := keyPair.Seal([]byte(vaultKey))
+		if err != nil {
+			return nil, err
+		}
+
+		vaultAccessList = append(
+			vaultAccessList,
+			entity.VaultAccess{
+				VaultID:      vault.ID,
+				PermissionID: permissionData.ID,
+				VaultKey:     sealedVaultKey,
+			},
+		)
+	}
+
+	newVaultAccessList, err := s.vaultaccessService.CreateBulk(vaultAccessList)
 	if err != nil {
 		return nil, err
 	}
 
-	// Hanya public key yang dibutuhkan untuk melakukan seal.
-	keyPair := keyring.FromPublicKey(
-		authUser.Permission.PublicKey,
-	)
-
-	// Seal vault key untuk permission/user yang membuat vault.
-	sealedVaultKey, err := keyPair.Seal(
-		[]byte(vaultKey),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	// Simpan encrypted vault key di VaultAccess.
-	vaultAccessData, err := s.vaultaccessService.Create(
-		vault.ID,
-		authUser.PermissionID,
-		sealedVaultKey,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	// Inisialisasi database vault menggunakan raw vault key.
 	_, err = s.tacenvaDB.File(
 		vault.ID,
 		vaultKey,
@@ -96,9 +105,14 @@ func (s *Service) Create(
 		return nil, err
 	}
 
-	vaultAccessData.Vault = *vault
+	for _, data := range newVaultAccessList {
+		if data.PermissionID == authUser.PermissionID {
+			data.Vault = *vault
+			return &data, nil
+		}
+	}
 
-	return vaultAccessData, nil
+	return nil, ErrNotFound
 }
 
 func (s *Service) VaultAccessList(

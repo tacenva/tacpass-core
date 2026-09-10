@@ -7,6 +7,7 @@ import (
 	"github.com/tacenva/tacpass-core/permission"
 	"github.com/tacenva/tacpass-core/user"
 	"github.com/tacenva/tacpass-core/util/keyring"
+	"github.com/tacenva/tacpass-core/vaultaccess"
 )
 
 var (
@@ -17,6 +18,7 @@ var (
 type Service struct {
 	userService       *user.Service
 	permissionService *permission.Service
+	vaultAccess       *vaultaccess.Service
 }
 
 func NewService(
@@ -62,6 +64,18 @@ func (s *Service) Create(
 	return s.permissionService.Create(name, privilege)
 }
 
+func (s *Service) GrantPrivilege(
+	authUser *entity.User,
+	vaultAccessList []entity.VaultAccess,
+) error {
+	if !authUser.HasAdminPermission() {
+		return ErrPermission
+	}
+
+	_, err := s.vaultAccess.CreateBulk(vaultAccessList)
+	return err
+}
+
 func (s *Service) ChangeName(
 	authUser *entity.User,
 	id string,
@@ -80,6 +94,10 @@ func (s *Service) ChangePrivilege(
 	privilege entity.Privilege,
 ) error {
 	if !authUser.HasAdminPermission() {
+		return ErrPermission
+	}
+
+	if authUser.PermissionID == id {
 		return ErrPermission
 	}
 

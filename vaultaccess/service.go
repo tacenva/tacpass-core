@@ -57,6 +57,78 @@ func (s *Service) Create(
 	return vaultAccess, nil
 }
 
+func validateVaultAccess(
+	vaultAccess *entity.VaultAccess,
+	requireID bool,
+) error {
+	if requireID && strings.TrimSpace(vaultAccess.ID) == "" {
+		return ErrNotFound
+	}
+
+	vaultAccess.ID = strings.TrimSpace(vaultAccess.ID)
+	vaultAccess.VaultID = strings.TrimSpace(vaultAccess.VaultID)
+	vaultAccess.PermissionID = strings.TrimSpace(vaultAccess.PermissionID)
+	vaultAccess.VaultKey = strings.TrimSpace(vaultAccess.VaultKey)
+
+	if vaultAccess.VaultID == "" {
+		return ErrVaultIDEmpty
+	}
+
+	if vaultAccess.PermissionID == "" {
+		return ErrPermissionIDEmpty
+	}
+
+	if vaultAccess.VaultKey == "" {
+		return ErrVaultKeyEmpty
+	}
+
+	return nil
+}
+
+func (s *Service) CreateBulk(
+	values []entity.VaultAccess,
+) ([]entity.VaultAccess, error) {
+	if len(values) == 0 {
+		return values, nil
+	}
+
+	vaultAccesses := make([]*entity.VaultAccess, len(values))
+
+	for i := range values {
+		if err := validateVaultAccess(&values[i], false); err != nil {
+			return nil, err
+		}
+
+		vaultAccesses[i] = &values[i]
+	}
+
+	if err := s.repository.CreateBulk(vaultAccesses); err != nil {
+		return nil, err
+	}
+
+	return values, nil
+}
+
+func (s *Service) UpdateBulk(
+	values []entity.VaultAccess,
+) error {
+	if len(values) == 0 {
+		return nil
+	}
+
+	vaultAccesses := make([]*entity.VaultAccess, len(values))
+
+	for i := range values {
+		if err := validateVaultAccess(&values[i], true); err != nil {
+			return err
+		}
+
+		vaultAccesses[i] = &values[i]
+	}
+
+	return s.repository.UpdateBulk(vaultAccesses)
+}
+
 func (s *Service) IsVaultAccesible(
 	vaultID string,
 	permissionID string,

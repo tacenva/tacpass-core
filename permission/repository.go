@@ -41,6 +41,25 @@ func (r *repository) Find(id string) (*entity.Permission, error) {
 	return &permission, nil
 }
 
+func (r *repository) FindAdmin() (*entity.Permission, error) {
+	var permission entity.Permission
+
+	err := r.db.
+		Where("privilege = ?", entity.PrivilegeAdmin).
+		First(&permission).
+		Error
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &permission, nil
+}
+
 func (r *repository) FindByPublicKey(publicKey string) (*entity.Permission, error) {
 	var permission entity.Permission
 

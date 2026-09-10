@@ -11,8 +11,8 @@ type VaultAccess struct {
 	PermissionID string `json:"-" gorm:"type:varchar(26);not null;uniqueIndex:idx_vault_permission"`
 	VaultKey     string `json:"vault_key" gorm:"type:text;not null"`
 
-	Vault      Vault      `json:"vault" gorm:"foreignKey:VaultID;references:ID;constraint:OnDelete:CASCADE"`
-	Permission Permission `json:"-" gorm:"foreignKey:PermissionID;references:ID;constraint:OnDelete:CASCADE"`
+	Vault      Vault      `json:"vault" gorm:"foreignKey:VaultID;references:ID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE"`
+	Permission Permission `json:"-" gorm:"foreignKey:PermissionID;references:ID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE"`
 }
 
 func (p *VaultAccess) BeforeCreate(tx *gorm.DB) error {

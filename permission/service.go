@@ -59,6 +59,15 @@ func (s *Service) Create(
 	return permission, keyPair, nil
 }
 
+func (s *Service) AdminExists() (bool, error) {
+	permission, err := s.repository.FindAdmin()
+	if err != nil {
+		return false, err
+	}
+
+	return permission != nil, nil
+}
+
 func (s *Service) Get(id string) (*entity.Permission, error) {
 	id = strings.TrimSpace(id)
 

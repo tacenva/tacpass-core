@@ -20,7 +20,7 @@ type User struct {
 	Token        string     `json:"token" gorm:"type:varchar(128);not null"`
 	Status       UserStatus `json:"status" gorm:"type:varchar(20);not null"`
 
-	Permission Permission `json:"permission" gorm:"foreignKey:PermissionID;references:ID"`
+	Permission Permission `json:"permission" gorm:"foreignKey:PermissionID;references:ID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE"`
 }
 
 func (u *User) HasWritePermission() bool {

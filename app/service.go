@@ -40,6 +40,7 @@ func NewServices(
 		vault.NewRepository(sqliteDB),
 		tacenvaDB,
 		vaultAccessService,
+		permissionService,
 	)
 
 	accessControlService := accesscontrol.NewService(
