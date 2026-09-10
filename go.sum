@@ -9,8 +9,8 @@ github.com/mattn/go-sqlite3 v1.14.22/go.mod h1:Uh1q+B4BYcTPb+yiD3kU8Ct7aC0hY9fxU
 github.com/oklog/ulid/v2 v2.1.2 h1:IEclFb9JNvzYA6MW2SCxbLzcHTVsfqm3PrqGQJH5zec=
 github.com/oklog/ulid/v2 v2.1.2/go.mod h1:rcEKHmBBKfef9DhnvX7y1HZBYxjXb0cP5ExxNsTT1QQ=
 github.com/pborman/getopt v0.0.0-20170112200414-7148bc3a4c30/go.mod h1:85jBQOZwpVEaDAr341tbn15RS4fCAsIst0qp7i8ex1o=
-github.com/tacenva/database v1.0.0-alpha.1 h1:ngDoKtVD0aVU1X84JXSwLq/wxQ8/CTO6ClgCLOvPsks=
-github.com/tacenva/database v1.0.0-alpha.1/go.mod h1:UPFLkwRDCP0m3pad2TpMZeJqk1F7bW0EQc1JUn3lOGs=
+github.com/tacenva/database v1.0.0-alpha.2 h1:WgPGUv6JzE/fiDWzQa+KjKlryNWD7lq7vPVa28mCxCQ=
+github.com/tacenva/database v1.0.0-alpha.2/go.mod h1:UPFLkwRDCP0m3pad2TpMZeJqk1F7bW0EQc1JUn3lOGs=
 golang.org/x/crypto v0.56.0 h1:GUh5Ii4J5jtcseSMiRqr1jXCNHoxjeV9Fmekc2oLy6Y=
 golang.org/x/crypto v0.56.0/go.mod h1:OMW5y6CY9l38uPLmxU6l6pwcXp1obtLo3e6gT7gQR2I=
 golang.org/x/sys v0.47.0 h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=

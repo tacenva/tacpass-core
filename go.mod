@@ -5,7 +5,7 @@ go 1.26.5
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/oklog/ulid/v2 v2.1.2
-	github.com/tacenva/database v1.0.0-alpha.1
+	github.com/tacenva/database v1.0.0-alpha.2
 	gorm.io/gorm v1.31.2
 )
 
