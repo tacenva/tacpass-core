@@ -16,6 +16,8 @@ const (
 	AppDBFileName                = "tacenva.db"
 	CredentialCollectionFileName = "keypair.tacenva"
 	NodeDirName                  = "node"
+
+	DefaultPort = 49153
 )
 
 type Config struct {
@@ -27,7 +29,8 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Port int `toml:"port"`
+	Port     int    `toml:"port"`
+	Hostname string `toml:"hostname"`
 }
 
 type TLSConfig struct {
@@ -35,16 +38,25 @@ type TLSConfig struct {
 	KeyFile  string `toml:"key_file"`
 }
 
-func Default() *Config {
+func Default() (*Config, error) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return nil, fmt.Errorf(
+			"get hostname: %w",
+			err,
+		)
+	}
+
 	return &Config{
 		Server: ServerConfig{
-			Port: 49153,
+			Port:     DefaultPort,
+			Hostname: hostname,
 		},
 		TLS: TLSConfig{
 			CertFile: "certs/server.crt",
 			KeyFile:  "certs/server.key",
 		},
-	}
+	}, nil
 }
 
 func (cfg *Config) Path(parts ...string) string {
@@ -140,7 +152,11 @@ func Load(dev bool) (*Config, error) {
 		)
 	}
 
-	cfg := Default()
+	cfg, err := Default()
+	if err != nil {
+		return nil, err
+	}
+
 	cfg.BaseDir = baseDir
 
 	if _, err := toml.Decode(
@@ -191,7 +207,11 @@ func LoadOrCreate(dev bool) (*Config, error) {
 		)
 	}
 
-	cfg := Default()
+	cfg, err := Default()
+	if err != nil {
+		return nil, err
+	}
+
 	cfg.BaseDir = baseDir
 
 	if err := cfg.setSoTULID(
