@@ -50,28 +50,21 @@ func (s *Service) RecordChange(
 		)
 	}
 
-	var last SyncChange
+	var lastSequence uint64
 
 	err := tx.
-		Order("sequence DESC").
-		First(&last).
+		Model(&SyncChange{}).
+		Select("COALESCE(MAX(sequence), 0)").
+		Scan(&lastSequence).
 		Error
-
-	var sequence uint64
-
-	switch err {
-	case nil:
-		sequence = last.Sequence + 1
-
-	case gorm.ErrRecordNotFound:
-		sequence = 1
-
-	default:
+	if err != nil {
 		return fmt.Errorf(
 			"get last sync sequence: %w",
 			err,
 		)
 	}
+
+	sequence := lastSequence + 1
 
 	now := time.Now()
 
@@ -126,7 +119,6 @@ func (s *Service) RecordChange(
 
 	return nil
 }
-
 func (s *Service) GetPendingChanges(
 	userID string,
 	entity string,

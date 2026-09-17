@@ -25,7 +25,7 @@ const syncEntityVault = "vault"
 
 type Service struct {
 	repository         *repository
-	vaultRecordService *vaultrecord.RawService
+	VaultRecordService *vaultrecord.RawService
 	vaultaccessService *vaultaccess.Service
 	permissionService  *permission.Service
 	syncService        *sync.Service
@@ -40,7 +40,7 @@ func NewService(
 ) *Service {
 	return &Service{
 		repository: repository,
-		vaultRecordService: vaultrecord.NewRawService(
+		VaultRecordService: vaultrecord.NewRawService(
 			tacenvaDB,
 			syncService,
 			vaultaccessService,
@@ -143,7 +143,7 @@ func (s *Service) Create(
 		return nil, err
 	}
 
-	if err = s.vaultRecordService.Init(vault.ID, vaultKey); err != nil {
+	if err = s.VaultRecordService.Init(vault.ID, vaultKey); err != nil {
 		return nil, err
 	}
 
@@ -286,7 +286,7 @@ func (s *Service) Delete(
 		return err
 	}
 
-	if err := s.vaultRecordService.Delete(vault.ID, id); err != nil {
+	if err := s.VaultRecordService.Delete(vault.ID, id); err != nil {
 		return err
 	}
 
