@@ -7,7 +7,7 @@ type SyncChange struct {
 
 	Sequence uint64 `gorm:"uniqueIndex;not null"`
 
-	Entity   string `gorm:"type:varchar(50);index;not null"`
+	Entity   string `gorm:"type:varchar(100);index;not null"`
 	EntityID string `gorm:"type:varchar(26);index;not null"`
 
 	Operation string `gorm:"type:varchar(20);not null"`

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/tacenva/tacpass-core/entity"
+	"gorm.io/gorm"
 )
 
 var (
@@ -109,6 +110,38 @@ func (s *Service) CreateBulk(
 	return values, nil
 }
 
+func (s *Service) CreateBulkTx(
+	tx *gorm.DB,
+	values []entity.VaultAccess,
+) ([]entity.VaultAccess, error) {
+	if tx == nil {
+		return nil, errors.New("transaction is required")
+	}
+
+	if len(values) == 0 {
+		return values, nil
+	}
+
+	vaultAccesses := make([]*entity.VaultAccess, len(values))
+
+	for i := range values {
+		if err := validateVaultAccess(&values[i], false); err != nil {
+			return nil, err
+		}
+
+		vaultAccesses[i] = &values[i]
+	}
+
+	if err := s.repository.CreateBulkTx(
+		tx,
+		vaultAccesses,
+	); err != nil {
+		return nil, err
+	}
+
+	return values, nil
+}
+
 func (s *Service) UpdateBulk(
 	values []entity.VaultAccess,
 ) error {
@@ -144,6 +177,7 @@ func (s *Service) IsVaultAccesible(
 	if vaultAccess == nil {
 		return false, nil
 	}
+
 	return true, nil
 }
 

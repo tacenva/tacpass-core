@@ -11,6 +11,7 @@ import (
 	"github.com/tacenva/tacpass-core/internal/vaultaccess"
 	"github.com/tacenva/tacpass-core/util/credential"
 	"github.com/tacenva/tacpass-core/util/keyring"
+	"github.com/tacenva/tacpass-core/vaultrecord"
 	"gorm.io/gorm"
 )
 
@@ -24,7 +25,7 @@ const syncEntityVault = "vault"
 
 type Service struct {
 	repository         *repository
-	tacenvaDB          *database.DB
+	vaultRecordService *vaultrecord.RawService
 	vaultaccessService *vaultaccess.Service
 	permissionService  *permission.Service
 	syncService        *sync.Service
@@ -38,8 +39,12 @@ func NewService(
 	syncService *sync.Service,
 ) *Service {
 	return &Service{
-		repository:         repository,
-		tacenvaDB:          tacenvaDB,
+		repository: repository,
+		vaultRecordService: vaultrecord.NewRawService(
+			tacenvaDB,
+			syncService,
+			vaultaccessService,
+		),
 		vaultaccessService: vaultaccessService,
 		permissionService:  permissionService,
 		syncService:        syncService,
@@ -74,56 +79,71 @@ func (s *Service) Create(
 		Name: name,
 	}
 
-	if err := s.repository.Create(vault); err != nil {
-		return nil, err
-	}
+	userIDs := uniqueUserIDsFromPermissions(
+		permissionList,
+	)
 
-	vaultAccessList := make([]entity.VaultAccess, 0, len(permissionList))
+	var newVaultAccessList []entity.VaultAccess
 
-	for _, permissionData := range permissionList {
-		keyPair := keyring.FromPublicKey(permissionData.PublicKey)
-
-		sealedVaultKey, err := keyPair.Seal([]byte(vaultKey))
-		if err != nil {
-			return nil, err
+	err = s.repository.Transaction(func(tx *gorm.DB) error {
+		if err := s.repository.Create(tx, vault); err != nil {
+			return err
 		}
 
-		vaultAccessList = append(
-			vaultAccessList,
-			entity.VaultAccess{
-				VaultID:      vault.ID,
-				PermissionID: permissionData.ID,
-				VaultKey:     sealedVaultKey,
-			},
+		vaultAccessList := make(
+			[]entity.VaultAccess,
+			0,
+			len(permissionList),
 		)
-	}
 
-	newVaultAccessList, err := s.vaultaccessService.CreateBulk(vaultAccessList)
+		for _, permissionData := range permissionList {
+			keyPair := keyring.FromPublicKey(
+				permissionData.PublicKey,
+			)
+
+			sealedVaultKey, err := keyPair.Seal(
+				[]byte(vaultKey),
+			)
+			if err != nil {
+				return err
+			}
+
+			vaultAccessList = append(
+				vaultAccessList,
+				entity.VaultAccess{
+					VaultID:      vault.ID,
+					PermissionID: permissionData.ID,
+					VaultKey:     sealedVaultKey,
+				},
+			)
+		}
+
+		newVaultAccessList, err = s.vaultaccessService.CreateBulkTx(
+			tx,
+			vaultAccessList,
+		)
+		if err != nil {
+			return err
+		}
+
+		if err := s.syncService.RecordChange(
+			tx,
+			syncEntityVault,
+			vault.ID,
+			sync.OperationCreate,
+			userIDs,
+		); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = s.tacenvaDB.File(
-		vault.ID,
-		vaultKey,
-		database.FileModeOpenOrCreate,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	userIDs := uniqueUserIDsFromPermissions(permissionList)
-
-	// TODO:
-	// Ganti nil dengan transaction *gorm.DB yang mencakup
-	// mutation Vault + VaultAccess + SyncChange.
-	if err := s.syncService.RecordChange(
-		(*gorm.DB)(nil),
-		syncEntityVault,
-		vault.ID,
-		sync.OperationCreate,
-		userIDs,
-	); err != nil {
+	if err = s.vaultRecordService.Init(vault.ID, vaultKey); err != nil {
 		return nil, err
 	}
 
@@ -180,27 +200,32 @@ func (s *Service) Update(
 		return nil, ErrNotFound
 	}
 
-	vault.Name = name
-
-	if err := s.repository.Update(vault); err != nil {
-		return nil, err
-	}
-
 	userIDs, err := s.userIDsByVaultID(vault.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	// TODO:
-	// Ganti nil dengan transaction *gorm.DB yang sama
-	// dengan transaction update Vault.
-	if err := s.syncService.RecordChange(
-		(*gorm.DB)(nil),
-		syncEntityVault,
-		vault.ID,
-		sync.OperationUpdate,
-		userIDs,
-	); err != nil {
+	vault.Name = name
+
+	err = s.repository.Transaction(func(tx *gorm.DB) error {
+		if err := s.repository.Update(tx, vault); err != nil {
+			return err
+		}
+
+		if err := s.syncService.RecordChange(
+			tx,
+			syncEntityVault,
+			vault.ID,
+			sync.OperationUpdate,
+			userIDs,
+		); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
 		return nil, err
 	}
 
@@ -230,30 +255,38 @@ func (s *Service) Delete(
 		return ErrNotFound
 	}
 
-	// Ambil user IDs sebelum VaultAccess ikut terhapus.
+	// Ambil sebelum VaultAccess terhapus.
 	userIDs, err := s.userIDsByVaultID(vault.ID)
 	if err != nil {
 		return err
 	}
 
-	if err := s.tacenvaDB.Delete(vault.ID); err != nil {
+	err = s.repository.Transaction(func(tx *gorm.DB) error {
+		if err := s.repository.Delete(
+			tx,
+			vault.ID,
+		); err != nil {
+			return err
+		}
+
+		if err := s.syncService.RecordChange(
+			tx,
+			syncEntityVault,
+			vault.ID,
+			sync.OperationDelete,
+			userIDs,
+		); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
 		return err
 	}
 
-	if err := s.repository.Delete(vault.ID); err != nil {
-		return err
-	}
-
-	// TODO:
-	// Ganti nil dengan transaction *gorm.DB yang sama
-	// dengan transaction delete Vault.
-	if err := s.syncService.RecordChange(
-		(*gorm.DB)(nil),
-		syncEntityVault,
-		vault.ID,
-		sync.OperationDelete,
-		userIDs,
-	); err != nil {
+	if err := s.vaultRecordService.Delete(vault.ID, id); err != nil {
 		return err
 	}
 
@@ -327,5 +360,59 @@ func (s *Service) IsVaultAccesible(
 	vaultID string,
 	permissionID string,
 ) (bool, error) {
-	return s.vaultaccessService.IsVaultAccesible(vaultID, permissionID)
+	return s.vaultaccessService.IsVaultAccesible(
+		vaultID,
+		permissionID,
+	)
+}
+
+func (s *Service) PendingCount(
+	authUser *entity.User,
+) (int64, error) {
+	return s.syncService.PendingCount(authUser.ID, syncEntityVault)
+}
+
+type PendingVaultChange struct {
+	SyncChange sync.SyncChange `json:"sync_change"`
+	Vault      *entity.Vault   `json:"vault,omitempty"`
+}
+
+func (s *Service) GetPendingChanges(
+	authUser *entity.User,
+) ([]PendingVaultChange, error) {
+	changes, err := s.syncService.GetPendingChanges(
+		authUser.ID,
+		syncEntityVault,
+		500,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]PendingVaultChange, 0, len(changes))
+
+	for _, change := range changes {
+		item := PendingVaultChange{
+			SyncChange: change,
+		}
+
+		if change.Operation != sync.OperationDelete {
+			vault, err := s.repository.FindByID(
+				change.EntityID,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			if vault == nil {
+				continue
+			}
+
+			item.Vault = vault
+		}
+
+		result = append(result, item)
+	}
+
+	return result, nil
 }

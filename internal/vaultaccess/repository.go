@@ -15,8 +15,17 @@ func NewRepository(db *gorm.DB) *repository {
 	}
 }
 
-func (r *repository) Create(vaultAccess *entity.VaultAccess) error {
+func (r *repository) Create(
+	vaultAccess *entity.VaultAccess,
+) error {
 	return r.db.Create(vaultAccess).Error
+}
+
+func (r *repository) CreateTx(
+	tx *gorm.DB,
+	vaultAccess *entity.VaultAccess,
+) error {
+	return tx.Create(vaultAccess).Error
 }
 
 func (r *repository) CreateBulk(
@@ -27,6 +36,19 @@ func (r *repository) CreateBulk(
 	}
 
 	return r.db.
+		CreateInBatches(vaultAccesses, 100).
+		Error
+}
+
+func (r *repository) CreateBulkTx(
+	tx *gorm.DB,
+	vaultAccesses []*entity.VaultAccess,
+) error {
+	if len(vaultAccesses) == 0 {
+		return nil
+	}
+
+	return tx.
 		CreateInBatches(vaultAccesses, 100).
 		Error
 }
@@ -70,7 +92,9 @@ func (r *repository) UpdateBulk(
 	})
 }
 
-func (r *repository) FindByPermissionID(permissionId string) (*entity.VaultAccess, error) {
+func (r *repository) FindByPermissionID(
+	permissionId string,
+) (*entity.VaultAccess, error) {
 	var vaultAccess entity.VaultAccess
 
 	err := r.db.
@@ -109,7 +133,11 @@ func (r *repository) FindByVaultAndPermission(
 	var vaultAccess entity.VaultAccess
 
 	err := r.db.
-		Where("vault_id = ? AND permission_id = ?", vaultID, permissionID).
+		Where(
+			"vault_id = ? AND permission_id = ?",
+			vaultID,
+			permissionID,
+		).
 		First(&vaultAccess).
 		Error
 
@@ -134,7 +162,9 @@ func (r *repository) FindAll() ([]entity.VaultAccess, error) {
 	return vaultAccesses, nil
 }
 
-func (r *repository) Update(vaultAccess *entity.VaultAccess) error {
+func (r *repository) Update(
+	vaultAccess *entity.VaultAccess,
+) error {
 	return r.db.Save(vaultAccess).Error
 }
 

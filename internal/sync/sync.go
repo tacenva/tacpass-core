@@ -129,10 +129,15 @@ func (s *Service) RecordChange(
 
 func (s *Service) GetPendingChanges(
 	userID string,
+	entity string,
 	limit int,
 ) ([]SyncChange, error) {
 	if userID == "" {
 		return nil, fmt.Errorf("user id is required")
+	}
+
+	if entity == "" {
+		return nil, fmt.Errorf("sync entity is required")
 	}
 
 	if limit <= 0 {
@@ -147,8 +152,9 @@ func (s *Service) GetPendingChanges(
 			"JOIN sync_user_changes suc ON suc.sync_change_id = sync_changes.id",
 		).
 		Where(
-			"suc.user_id = ?",
+			"suc.user_id = ? AND sync_changes.entity = ?",
 			userID,
+			entity,
 		).
 		Order("sync_changes.sequence ASC").
 		Limit(limit).
@@ -233,18 +239,27 @@ func (s *Service) MarkSyncedBySequence(
 
 func (s *Service) PendingCount(
 	userID string,
+	entity string,
 ) (int64, error) {
 	if userID == "" {
 		return 0, fmt.Errorf("user id is required")
+	}
+
+	if entity == "" {
+		return 0, fmt.Errorf("sync entity is required")
 	}
 
 	var count int64
 
 	err := s.db.
 		Model(&SyncUserChange{}).
+		Joins(
+			"JOIN sync_changes ON sync_changes.id = sync_user_changes.sync_change_id",
+		).
 		Where(
-			"user_id = ?",
+			"sync_user_changes.user_id = ? AND sync_changes.entity = ?",
 			userID,
+			entity,
 		).
 		Count(&count).
 		Error

@@ -17,11 +17,22 @@ func NewRepository(db *gorm.DB) *repository {
 	}
 }
 
-func (r *repository) Create(vault *entity.Vault) error {
-	return r.db.Create(vault).Error
+func (r *repository) Transaction(
+	fn func(tx *gorm.DB) error,
+) error {
+	return r.db.Transaction(fn)
 }
 
-func (r *repository) FindByID(id string) (*entity.Vault, error) {
+func (r *repository) Create(
+	tx *gorm.DB,
+	vault *entity.Vault,
+) error {
+	return tx.Create(vault).Error
+}
+
+func (r *repository) FindByID(
+	id string,
+) (*entity.Vault, error) {
 	var vault entity.Vault
 
 	err := r.db.
@@ -58,16 +69,22 @@ func (r *repository) FindAccessible(
 	return vaultAccessList, nil
 }
 
-func (r *repository) Update(vault *entity.Vault) error {
-	return r.db.
+func (r *repository) Update(
+	tx *gorm.DB,
+	vault *entity.Vault,
+) error {
+	return tx.
 		Model(&entity.Vault{}).
 		Where("id = ?", vault.ID).
 		Update("name", vault.Name).
 		Error
 }
 
-func (r *repository) Delete(id string) error {
-	return r.db.
+func (r *repository) Delete(
+	tx *gorm.DB,
+	id string,
+) error {
+	return tx.
 		Where("id = ?", id).
 		Delete(&entity.Vault{}).
 		Error
