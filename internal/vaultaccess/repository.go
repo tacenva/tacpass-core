@@ -84,18 +84,22 @@ func (r *repository) FindByPermissionID(permissionId string) (*entity.VaultAcces
 	return &vaultAccess, nil
 }
 
-func (r *repository) FindByVaultID(vaultId string) (*entity.VaultAccess, error) {
-	var vaultAccess entity.VaultAccess
+func (r *repository) FindByVaultID(
+	vaultID string,
+) ([]entity.VaultAccess, error) {
+	var values []entity.VaultAccess
 
 	err := r.db.
-		First(&vaultAccess, "vault_id = ?", vaultId).
+		Preload("Permission.Users").
+		Where("vault_id = ?", vaultID).
+		Find(&values).
 		Error
 
 	if err != nil {
 		return nil, err
 	}
 
-	return &vaultAccess, nil
+	return values, nil
 }
 
 func (r *repository) FindByVaultAndPermission(

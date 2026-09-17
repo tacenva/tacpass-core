@@ -60,25 +60,6 @@ func (s *Service) Create(
 	return user, token, nil
 }
 
-func (s *Service) Get(id string) (*entity.User, error) {
-	id = strings.TrimSpace(id)
-
-	if id == "" {
-		return nil, ErrNotFound
-	}
-
-	user, err := s.repository.FindByID(id)
-	if err != nil {
-		return nil, err
-	}
-
-	if user == nil {
-		return nil, ErrNotFound
-	}
-
-	return user, nil
-}
-
 func (s *Service) GetByToken(token string) (*entity.User, error) {
 	token = strings.TrimSpace(token)
 
@@ -98,10 +79,6 @@ func (s *Service) GetByToken(token string) (*entity.User, error) {
 	}
 
 	return user, nil
-}
-
-func (s *Service) List() ([]entity.User, error) {
-	return s.repository.FindAll()
 }
 
 func (s *Service) Update(

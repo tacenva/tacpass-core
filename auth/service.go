@@ -4,8 +4,8 @@ import (
 	"os"
 
 	"github.com/tacenva/tacpass-core/entity"
-	"github.com/tacenva/tacpass-core/permission"
-	"github.com/tacenva/tacpass-core/user"
+	"github.com/tacenva/tacpass-core/internal/permission"
+	"github.com/tacenva/tacpass-core/internal/user"
 )
 
 type Service struct {

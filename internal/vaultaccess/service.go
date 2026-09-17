@@ -160,3 +160,15 @@ func (s *Service) Delete(id string) error {
 
 	return s.repository.Delete(id)
 }
+
+func (s *Service) FindByVaultID(
+	vaultID string,
+) ([]entity.VaultAccess, error) {
+	vaultID = strings.TrimSpace(vaultID)
+
+	if vaultID == "" {
+		return nil, ErrVaultIDEmpty
+	}
+
+	return s.repository.FindByVaultID(vaultID)
+}

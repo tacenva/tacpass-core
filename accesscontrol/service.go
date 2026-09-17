@@ -4,11 +4,11 @@ import (
 	"errors"
 
 	"github.com/tacenva/tacpass-core/entity"
-	"github.com/tacenva/tacpass-core/permission"
-	"github.com/tacenva/tacpass-core/user"
+	"github.com/tacenva/tacpass-core/internal/permission"
+	"github.com/tacenva/tacpass-core/internal/user"
+	"github.com/tacenva/tacpass-core/internal/vaultaccess"
 	"github.com/tacenva/tacpass-core/util/keyring"
 	"github.com/tacenva/tacpass-core/vault"
-	"github.com/tacenva/tacpass-core/vaultaccess"
 )
 
 var (
@@ -161,6 +161,15 @@ func (s *Service) ApproveUser(
 	)
 }
 
+func (s *Service) ApproveUserInternal(
+	userId string,
+) (*entity.User, error) {
+	return s.userService.UpdateStatus(
+		userId,
+		entity.UserStatusApproved,
+	)
+}
+
 func (s *Service) RevokeUser(
 	authUser *entity.User,
 	userId string,
@@ -187,4 +196,27 @@ func (s *Service) DeletePermission(
 		return ErrPermission
 	}
 	return s.permissionService.Delete(id)
+}
+
+func (s *Service) InitAdminPrivilege(name string) (*entity.Permission, *keyring.KeyPair, error) {
+	adminExists, err := s.permissionService.AdminExists()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if adminExists {
+		return nil, nil, errors.New("admin was initialized")
+	}
+
+	return s.permissionService.Create(name, entity.PrivilegeAdmin)
+}
+
+func (s *Service) ListInternal() ([]entity.Permission, error) {
+	return s.permissionService.List()
+}
+
+func (s *Service) GetInternal(
+	id string,
+) (*entity.Permission, error) {
+	return s.permissionService.Get(id)
 }

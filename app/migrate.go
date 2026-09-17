@@ -2,6 +2,7 @@ package app
 
 import (
 	"github.com/tacenva/tacpass-core/entity"
+	"github.com/tacenva/tacpass-core/internal/sync"
 	"gorm.io/gorm"
 )
 
@@ -15,5 +16,9 @@ func Migrate(db *gorm.DB) error {
 		&entity.User{},
 		&entity.Vault{},
 		&entity.VaultAccess{},
+
+		&sync.SyncChange{},
+		&sync.SyncUserChange{},
+		&sync.SyncState{},
 	)
 }

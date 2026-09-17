@@ -6,10 +6,12 @@ import (
 
 	"github.com/tacenva/database"
 	"github.com/tacenva/tacpass-core/entity"
-	"github.com/tacenva/tacpass-core/permission"
+	"github.com/tacenva/tacpass-core/internal/permission"
+	"github.com/tacenva/tacpass-core/internal/sync"
+	"github.com/tacenva/tacpass-core/internal/vaultaccess"
 	"github.com/tacenva/tacpass-core/util/credential"
 	"github.com/tacenva/tacpass-core/util/keyring"
-	"github.com/tacenva/tacpass-core/vaultaccess"
+	"gorm.io/gorm"
 )
 
 var (
@@ -18,11 +20,14 @@ var (
 	ErrPermission = errors.New("permission denied")
 )
 
+const syncEntityVault = "vault"
+
 type Service struct {
 	repository         *repository
 	tacenvaDB          *database.DB
 	vaultaccessService *vaultaccess.Service
 	permissionService  *permission.Service
+	syncService        *sync.Service
 }
 
 func NewService(
@@ -30,12 +35,14 @@ func NewService(
 	tacenvaDB *database.DB,
 	vaultaccessService *vaultaccess.Service,
 	permissionService *permission.Service,
+	syncService *sync.Service,
 ) *Service {
 	return &Service{
 		repository:         repository,
 		tacenvaDB:          tacenvaDB,
 		vaultaccessService: vaultaccessService,
 		permissionService:  permissionService,
+		syncService:        syncService,
 	}
 }
 
@@ -105,9 +112,25 @@ func (s *Service) Create(
 		return nil, err
 	}
 
+	userIDs := uniqueUserIDsFromPermissions(permissionList)
+
+	// TODO:
+	// Ganti nil dengan transaction *gorm.DB yang mencakup
+	// mutation Vault + VaultAccess + SyncChange.
+	if err := s.syncService.RecordChange(
+		(*gorm.DB)(nil),
+		syncEntityVault,
+		vault.ID,
+		sync.OperationCreate,
+		userIDs,
+	); err != nil {
+		return nil, err
+	}
+
 	for _, data := range newVaultAccessList {
 		if data.PermissionID == authUser.PermissionID {
 			data.Vault = *vault
+
 			return &data, nil
 		}
 	}
@@ -163,6 +186,24 @@ func (s *Service) Update(
 		return nil, err
 	}
 
+	userIDs, err := s.userIDsByVaultID(vault.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO:
+	// Ganti nil dengan transaction *gorm.DB yang sama
+	// dengan transaction update Vault.
+	if err := s.syncService.RecordChange(
+		(*gorm.DB)(nil),
+		syncEntityVault,
+		vault.ID,
+		sync.OperationUpdate,
+		userIDs,
+	); err != nil {
+		return nil, err
+	}
+
 	return vault, nil
 }
 
@@ -189,6 +230,12 @@ func (s *Service) Delete(
 		return ErrNotFound
 	}
 
+	// Ambil user IDs sebelum VaultAccess ikut terhapus.
+	userIDs, err := s.userIDsByVaultID(vault.ID)
+	if err != nil {
+		return err
+	}
+
 	if err := s.tacenvaDB.Delete(vault.ID); err != nil {
 		return err
 	}
@@ -197,5 +244,88 @@ func (s *Service) Delete(
 		return err
 	}
 
+	// TODO:
+	// Ganti nil dengan transaction *gorm.DB yang sama
+	// dengan transaction delete Vault.
+	if err := s.syncService.RecordChange(
+		(*gorm.DB)(nil),
+		syncEntityVault,
+		vault.ID,
+		sync.OperationDelete,
+		userIDs,
+	); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func (s *Service) userIDsByVaultID(
+	vaultID string,
+) ([]string, error) {
+	vaultAccessList, err := s.vaultaccessService.FindByVaultID(
+		vaultID,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	userIDs := make([]string, 0)
+	seen := make(map[string]struct{})
+
+	for _, vaultAccess := range vaultAccessList {
+		for _, user := range vaultAccess.Permission.Users {
+			if user.ID == "" {
+				continue
+			}
+
+			if _, ok := seen[user.ID]; ok {
+				continue
+			}
+
+			seen[user.ID] = struct{}{}
+
+			userIDs = append(
+				userIDs,
+				user.ID,
+			)
+		}
+	}
+
+	return userIDs, nil
+}
+
+func uniqueUserIDsFromPermissions(
+	permissionList []entity.Permission,
+) []string {
+	userIDs := make([]string, 0)
+	seen := make(map[string]struct{})
+
+	for _, permissionData := range permissionList {
+		for _, user := range permissionData.Users {
+			if user.ID == "" {
+				continue
+			}
+
+			if _, ok := seen[user.ID]; ok {
+				continue
+			}
+
+			seen[user.ID] = struct{}{}
+
+			userIDs = append(
+				userIDs,
+				user.ID,
+			)
+		}
+	}
+
+	return userIDs
+}
+
+func (s *Service) IsVaultAccesible(
+	vaultID string,
+	permissionID string,
+) (bool, error) {
+	return s.vaultaccessService.IsVaultAccesible(vaultID, permissionID)
 }

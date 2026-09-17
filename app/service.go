@@ -4,17 +4,16 @@ import (
 	"github.com/tacenva/database"
 	"github.com/tacenva/tacpass-core/accesscontrol"
 	"github.com/tacenva/tacpass-core/auth"
-	"github.com/tacenva/tacpass-core/permission"
-	"github.com/tacenva/tacpass-core/user"
+	"github.com/tacenva/tacpass-core/internal/permission"
+	"github.com/tacenva/tacpass-core/internal/sync"
+	"github.com/tacenva/tacpass-core/internal/user"
+	"github.com/tacenva/tacpass-core/internal/vaultaccess"
 	"github.com/tacenva/tacpass-core/vault"
-	"github.com/tacenva/tacpass-core/vaultaccess"
 	"gorm.io/gorm"
 )
 
 type Services struct {
 	Auth          *auth.Service
-	User          *user.Service
-	Permission    *permission.Service
 	AccessControl *accesscontrol.Service
 	Vault         *vault.Service
 	VaultAccess   *vaultaccess.Service
@@ -36,11 +35,13 @@ func NewServices(
 		vaultaccess.NewRepository(sqliteDB),
 	)
 
+	syncService := sync.NewService(sqliteDB)
 	vaultService := vault.NewService(
 		vault.NewRepository(sqliteDB),
 		tacenvaDB,
 		vaultAccessService,
 		permissionService,
+		syncService,
 	)
 
 	accessControlService := accesscontrol.NewService(
@@ -57,8 +58,6 @@ func NewServices(
 
 	return &Services{
 		Auth:          authService,
-		User:          userService,
-		Permission:    permissionService,
 		AccessControl: accessControlService,
 		Vault:         vaultService,
 		VaultAccess:   vaultAccessService,
