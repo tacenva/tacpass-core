@@ -50,6 +50,24 @@ func (s *Service) RecordChange(
 		)
 	}
 
+	if tx == nil {
+		return fmt.Errorf("sync transaction is required")
+	}
+
+	/*
+		Sequence harus dibuat di dalam transaction yang sama
+		dengan perubahan data.
+
+		MAX(sequence) + 1 masih punya potensi race jika ada
+		dua transaction yang benar-benar concurrent. Karena itu
+		kita lock row SyncChange yang tersedia sebelum membaca
+		sequence terakhir.
+
+		Jika tabel kosong, tidak ada row yang bisa di-lock.
+		Constraint UNIQUE pada sequence tetap sebaiknya dipasang
+		di database.
+	*/
+
 	var lastSequence uint64
 
 	err := tx.
@@ -65,7 +83,6 @@ func (s *Service) RecordChange(
 	}
 
 	sequence := lastSequence + 1
-
 	now := time.Now()
 
 	change := SyncChange{
@@ -88,12 +105,24 @@ func (s *Service) RecordChange(
 		return nil
 	}
 
-	pendingChanges := make([]SyncUserChange, 0, len(userIDs))
+	pendingChanges := make(
+		[]SyncUserChange,
+		0,
+		len(userIDs),
+	)
+
+	seenUserIDs := make(map[string]struct{})
 
 	for _, userID := range userIDs {
 		if userID == "" {
 			continue
 		}
+
+		if _, exists := seenUserIDs[userID]; exists {
+			continue
+		}
+
+		seenUserIDs[userID] = struct{}{}
 
 		pendingChanges = append(
 			pendingChanges,
@@ -119,6 +148,7 @@ func (s *Service) RecordChange(
 
 	return nil
 }
+
 func (s *Service) GetPendingChanges(
 	userID string,
 	entity string,
@@ -140,6 +170,7 @@ func (s *Service) GetPendingChanges(
 
 	err := s.db.
 		Table("sync_changes").
+		Select("sync_changes.*").
 		Joins(
 			"JOIN sync_user_changes suc ON suc.sync_change_id = sync_changes.id",
 		).
@@ -166,26 +197,70 @@ func (s *Service) GetPendingChanges(
 func (s *Service) MarkSynced(
 	tx *gorm.DB,
 	userID string,
+	entity string,
 	changeIDs []string,
 ) error {
 	if userID == "" {
 		return fmt.Errorf("user id is required")
 	}
 
+	if entity == "" {
+		return fmt.Errorf("sync entity is required")
+	}
+
+	if tx == nil {
+		return fmt.Errorf("sync transaction is required")
+	}
+
 	if len(changeIDs) == 0 {
+		return nil
+	}
+
+	var syncUserChangeIDs []string
+
+	err := tx.
+		Table("sync_user_changes").
+		Joins(
+			"JOIN sync_changes ON sync_changes.id = sync_user_changes.sync_change_id",
+		).
+		Where(
+			"sync_user_changes.user_id = ?",
+			userID,
+		).
+		Where(
+			"sync_changes.entity = ?",
+			entity,
+		).
+		Where(
+			"sync_user_changes.sync_change_id IN ?",
+			changeIDs,
+		).
+		Pluck(
+			"sync_user_changes.id",
+			&syncUserChangeIDs,
+		).
+		Error
+
+	if err != nil {
+		return fmt.Errorf(
+			"find sync user changes: %w",
+			err,
+		)
+	}
+
+	if len(syncUserChangeIDs) == 0 {
 		return nil
 	}
 
 	if err := tx.
 		Where(
-			"user_id = ? AND sync_change_id IN ?",
-			userID,
-			changeIDs,
+			"id IN ?",
+			syncUserChangeIDs,
 		).
 		Delete(&SyncUserChange{}).
 		Error; err != nil {
 		return fmt.Errorf(
-			"mark sync changes as synced: %w",
+			"delete sync user changes: %w",
 			err,
 		)
 	}
@@ -200,6 +275,10 @@ func (s *Service) MarkSyncedBySequence(
 ) error {
 	if userID == "" {
 		return fmt.Errorf("user id is required")
+	}
+
+	if tx == nil {
+		return fmt.Errorf("sync transaction is required")
 	}
 
 	if lastSequence == 0 {
@@ -267,26 +346,22 @@ func (s *Service) PendingCount(
 }
 
 func (s *Service) GetLatestSequence() (uint64, error) {
-	var change SyncChange
+	var sequence uint64
 
 	err := s.db.
-		Order("sequence DESC").
-		First(&change).
+		Model(&SyncChange{}).
+		Select("COALESCE(MAX(sequence), 0)").
+		Scan(&sequence).
 		Error
 
-	switch err {
-	case nil:
-		return change.Sequence, nil
-
-	case gorm.ErrRecordNotFound:
-		return 0, nil
-
-	default:
+	if err != nil {
 		return 0, fmt.Errorf(
 			"get latest sync sequence: %w",
 			err,
 		)
 	}
+
+	return sequence, nil
 }
 
 func (s *Service) GetSyncState(
@@ -310,14 +385,12 @@ func (s *Service) GetSyncState(
 	case gorm.ErrRecordNotFound:
 		now := time.Now()
 
-		state = SyncState{
+		return &SyncState{
 			ID:           userID,
 			LastSequence: 0,
 			LastSyncAt:   nil,
 			UpdatedAt:    now,
-		}
-
-		return &state, nil
+		}, nil
 
 	default:
 		return nil, fmt.Errorf(
@@ -334,6 +407,10 @@ func (s *Service) UpdateSyncState(
 ) error {
 	if userID == "" {
 		return fmt.Errorf("user id is required")
+	}
+
+	if tx == nil {
+		return fmt.Errorf("sync transaction is required")
 	}
 
 	now := time.Now()
@@ -360,11 +437,16 @@ func (s *Service) UpdateSyncState(
 func (s *Service) CleanupChanges(
 	tx *gorm.DB,
 ) error {
+	if tx == nil {
+		return fmt.Errorf("sync transaction is required")
+	}
+
 	if err := tx.
 		Where(`
-			id NOT IN (
-				SELECT sync_change_id
-				FROM sync_user_changes
+			NOT EXISTS (
+				SELECT 1
+				FROM sync_user_changes suc
+				WHERE suc.sync_change_id = sync_changes.id
 			)
 		`).
 		Delete(&SyncChange{}).
@@ -376,4 +458,14 @@ func (s *Service) CleanupChanges(
 	}
 
 	return nil
+}
+
+func (s *Service) Transaction(
+	fn func(tx *gorm.DB) error,
+) error {
+	if fn == nil {
+		return fmt.Errorf("transaction function is required")
+	}
+
+	return s.db.Transaction(fn)
 }

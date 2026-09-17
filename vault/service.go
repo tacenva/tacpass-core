@@ -55,7 +55,7 @@ func (s *Service) Create(
 	authUser *entity.User,
 	name string,
 ) (*entity.VaultAccess, error) {
-	if !authUser.HasWritePermission() {
+	if authUser == nil || !authUser.HasWritePermission() {
 		return nil, ErrPermission
 	}
 
@@ -143,7 +143,10 @@ func (s *Service) Create(
 		return nil, err
 	}
 
-	if err = s.VaultRecordService.Init(vault.ID, vaultKey); err != nil {
+	if err := s.VaultRecordService.Init(
+		vault.ID,
+		vaultKey,
+	); err != nil {
 		return nil, err
 	}
 
@@ -161,6 +164,10 @@ func (s *Service) Create(
 func (s *Service) VaultAccessList(
 	authUser *entity.User,
 ) ([]entity.VaultAccess, error) {
+	if authUser == nil {
+		return nil, ErrPermission
+	}
+
 	vaultAccessList, err := s.repository.FindAccessible(
 		authUser.PermissionID,
 	)
@@ -176,7 +183,7 @@ func (s *Service) Update(
 	id string,
 	name string,
 ) (*entity.Vault, error) {
-	if !authUser.HasWritePermission() {
+	if authUser == nil || !authUser.HasWritePermission() {
 		return nil, ErrPermission
 	}
 
@@ -212,17 +219,13 @@ func (s *Service) Update(
 			return err
 		}
 
-		if err := s.syncService.RecordChange(
+		return s.syncService.RecordChange(
 			tx,
 			syncEntityVault,
 			vault.ID,
 			sync.OperationUpdate,
 			userIDs,
-		); err != nil {
-			return err
-		}
-
-		return nil
+		)
 	})
 
 	if err != nil {
@@ -236,7 +239,7 @@ func (s *Service) Delete(
 	authUser *entity.User,
 	id string,
 ) error {
-	if !authUser.HasWritePermission() {
+	if authUser == nil || !authUser.HasWritePermission() {
 		return ErrPermission
 	}
 
@@ -255,7 +258,6 @@ func (s *Service) Delete(
 		return ErrNotFound
 	}
 
-	// Ambil sebelum VaultAccess terhapus.
 	userIDs, err := s.userIDsByVaultID(vault.ID)
 	if err != nil {
 		return err
@@ -269,24 +271,23 @@ func (s *Service) Delete(
 			return err
 		}
 
-		if err := s.syncService.RecordChange(
+		return s.syncService.RecordChange(
 			tx,
 			syncEntityVault,
 			vault.ID,
 			sync.OperationDelete,
 			userIDs,
-		); err != nil {
-			return err
-		}
-
-		return nil
+		)
 	})
 
 	if err != nil {
 		return err
 	}
 
-	if err := s.VaultRecordService.Delete(vault.ID, id); err != nil {
+	if err := s.VaultRecordService.Delete(
+		vault.ID,
+		id,
+	); err != nil {
 		return err
 	}
 
@@ -296,6 +297,12 @@ func (s *Service) Delete(
 func (s *Service) userIDsByVaultID(
 	vaultID string,
 ) ([]string, error) {
+	vaultID = strings.TrimSpace(vaultID)
+
+	if vaultID == "" {
+		return nil, ErrNotFound
+	}
+
 	vaultAccessList, err := s.vaultaccessService.FindByVaultID(
 		vaultID,
 	)
@@ -307,20 +314,20 @@ func (s *Service) userIDsByVaultID(
 	seen := make(map[string]struct{})
 
 	for _, vaultAccess := range vaultAccessList {
-		for _, user := range vaultAccess.Permission.Users {
-			if user.ID == "" {
+		for _, vaultAccessUser := range vaultAccess.Permission.Users {
+			if vaultAccessUser.ID == "" {
 				continue
 			}
 
-			if _, ok := seen[user.ID]; ok {
+			if _, ok := seen[vaultAccessUser.ID]; ok {
 				continue
 			}
 
-			seen[user.ID] = struct{}{}
+			seen[vaultAccessUser.ID] = struct{}{}
 
 			userIDs = append(
 				userIDs,
-				user.ID,
+				vaultAccessUser.ID,
 			)
 		}
 	}
@@ -369,7 +376,14 @@ func (s *Service) IsVaultAccesible(
 func (s *Service) PendingCount(
 	authUser *entity.User,
 ) (int64, error) {
-	return s.syncService.PendingCount(authUser.ID, syncEntityVault)
+	if authUser == nil || authUser.ID == "" {
+		return 0, ErrPermission
+	}
+
+	return s.syncService.PendingCount(
+		authUser.ID,
+		syncEntityVault,
+	)
 }
 
 type PendingVaultChange struct {
@@ -380,6 +394,10 @@ type PendingVaultChange struct {
 func (s *Service) GetPendingChanges(
 	authUser *entity.User,
 ) ([]PendingVaultChange, error) {
+	if authUser == nil || authUser.ID == "" {
+		return nil, ErrPermission
+	}
+
 	changes, err := s.syncService.GetPendingChanges(
 		authUser.ID,
 		syncEntityVault,
@@ -389,7 +407,11 @@ func (s *Service) GetPendingChanges(
 		return nil, err
 	}
 
-	result := make([]PendingVaultChange, 0, len(changes))
+	result := make(
+		[]PendingVaultChange,
+		0,
+		len(changes),
+	)
 
 	for _, change := range changes {
 		item := PendingVaultChange{
@@ -415,4 +437,30 @@ func (s *Service) GetPendingChanges(
 	}
 
 	return result, nil
+}
+
+func (s *Service) MarkChangesSynced(
+	authUser *entity.User,
+	changeIDs []string,
+) error {
+	if authUser == nil || authUser.ID == "" {
+		return ErrPermission
+	}
+
+	if len(changeIDs) == 0 {
+		return nil
+	}
+
+	return s.syncService.Transaction(func(tx *gorm.DB) error {
+		if err := s.syncService.MarkSynced(
+			tx,
+			authUser.ID,
+			syncEntityVault,
+			changeIDs,
+		); err != nil {
+			return err
+		}
+
+		return s.syncService.CleanupChanges(tx)
+	})
 }

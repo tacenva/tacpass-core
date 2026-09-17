@@ -6,6 +6,7 @@ import (
 	"github.com/tacenva/database"
 	"github.com/tacenva/tacpass-core/internal/sync"
 	"github.com/tacenva/tacpass-core/internal/vaultaccess"
+	"gorm.io/gorm"
 )
 
 type RawService struct {
@@ -86,13 +87,18 @@ func (s *RawService) Create(
 		return "", err
 	}
 
-	if err := s.syncService.RecordChange(
-		nil,
-		s.getEntityName(vaultID),
-		recordID,
-		sync.OperationCreate,
-		userIDs,
-	); err != nil {
+	entityName := s.getEntityName(vaultID)
+
+	err = s.syncService.Transaction(func(tx *gorm.DB) error {
+		return s.syncService.RecordChange(
+			tx,
+			entityName,
+			recordID,
+			sync.OperationCreate,
+			userIDs,
+		)
+	})
+	if err != nil {
 		return "", err
 	}
 
@@ -136,13 +142,17 @@ func (s *RawService) Update(
 		return err
 	}
 
-	return s.syncService.RecordChange(
-		nil,
-		s.getEntityName(vaultID),
-		recordID,
-		sync.OperationUpdate,
-		userIDs,
-	)
+	entityName := s.getEntityName(vaultID)
+
+	return s.syncService.Transaction(func(tx *gorm.DB) error {
+		return s.syncService.RecordChange(
+			tx,
+			entityName,
+			recordID,
+			sync.OperationUpdate,
+			userIDs,
+		)
+	})
 }
 
 func (s *RawService) Delete(
@@ -174,13 +184,17 @@ func (s *RawService) Delete(
 		return err
 	}
 
-	return s.syncService.RecordChange(
-		nil,
-		s.getEntityName(vaultID),
-		recordID,
-		sync.OperationDelete,
-		userIDs,
-	)
+	entityName := s.getEntityName(vaultID)
+
+	return s.syncService.Transaction(func(tx *gorm.DB) error {
+		return s.syncService.RecordChange(
+			tx,
+			entityName,
+			recordID,
+			sync.OperationDelete,
+			userIDs,
+		)
+	})
 }
 
 func (s *RawService) userIDsByVaultID(
@@ -285,7 +299,11 @@ func (s *RawService) GetPendingChanges(
 		return nil, err
 	}
 
-	result := make([]PendingVaultChange, 0, len(changes))
+	result := make(
+		[]PendingVaultChange,
+		0,
+		len(changes),
+	)
 
 	for _, change := range changes {
 		item := PendingVaultChange{
@@ -311,4 +329,38 @@ func (s *RawService) GetPendingChanges(
 	}
 
 	return result, nil
+}
+
+func (s *RawService) MarkChangesSynced(
+	userID string,
+	vaultID string,
+	changeIDs []string,
+) error {
+	userID = strings.TrimSpace(userID)
+	vaultID = strings.TrimSpace(vaultID)
+
+	if userID == "" {
+		return ErrForbidden
+	}
+
+	if vaultID == "" {
+		return ErrVaultIDEmpty
+	}
+
+	if len(changeIDs) == 0 {
+		return nil
+	}
+
+	return s.syncService.Transaction(func(tx *gorm.DB) error {
+		if err := s.syncService.MarkSynced(
+			tx,
+			userID,
+			s.getEntityName(vaultID),
+			changeIDs,
+		); err != nil {
+			return err
+		}
+
+		return s.syncService.CleanupChanges(tx)
+	})
 }

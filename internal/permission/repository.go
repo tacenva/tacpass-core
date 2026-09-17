@@ -83,6 +83,7 @@ func (r *repository) FindAll() ([]entity.Permission, error) {
 	var permissions []entity.Permission
 
 	err := r.db.
+		Preload("Users").
 		Order("id ASC").
 		Find(&permissions).
 		Error
