@@ -66,12 +66,17 @@ func (s *Service) List(
 }
 
 func (s *Service) Create(
+	authUser *entity.User,
 	vaultDir string,
 	vaultKey string,
 	vaultID string,
 	record *entity.VaultRecord,
 ) (string, error) {
 	vaultID = strings.TrimSpace(vaultID)
+
+	if authUser == nil || authUser.ID == "" {
+		return "", ErrForbidden
+	}
 
 	if vaultID == "" {
 		return "", ErrVaultIDEmpty
@@ -81,7 +86,10 @@ func (s *Service) Create(
 		return "", ErrRecordDataEmpty
 	}
 
-	userIDs, err := s.userIDsByVaultID(vaultID)
+	userIDs, err := s.userIDsByVaultID(
+		vaultID,
+		authUser.ID,
+	)
 	if err != nil {
 		return "", err
 	}
@@ -115,12 +123,17 @@ func (s *Service) Create(
 }
 
 func (s *Service) Update(
+	authUser *entity.User,
 	vaultDir string,
 	vaultKey string,
 	vaultID string,
 	record *entity.VaultRecord,
 ) error {
 	vaultID = strings.TrimSpace(vaultID)
+
+	if authUser == nil || authUser.ID == "" {
+		return ErrForbidden
+	}
 
 	if vaultID == "" {
 		return ErrVaultIDEmpty
@@ -134,7 +147,10 @@ func (s *Service) Update(
 		return ErrRecordIDEmpty
 	}
 
-	userIDs, err := s.userIDsByVaultID(vaultID)
+	userIDs, err := s.userIDsByVaultID(
+		vaultID,
+		authUser.ID,
+	)
 	if err != nil {
 		return err
 	}
@@ -163,6 +179,7 @@ func (s *Service) Update(
 }
 
 func (s *Service) Delete(
+	authUser *entity.User,
 	vaultDir string,
 	vaultKey string,
 	vaultID string,
@@ -170,6 +187,10 @@ func (s *Service) Delete(
 ) error {
 	vaultID = strings.TrimSpace(vaultID)
 	recordID = strings.TrimSpace(recordID)
+
+	if authUser == nil || authUser.ID == "" {
+		return ErrForbidden
+	}
 
 	if vaultID == "" {
 		return ErrVaultIDEmpty
@@ -179,7 +200,10 @@ func (s *Service) Delete(
 		return ErrRecordIDEmpty
 	}
 
-	userIDs, err := s.userIDsByVaultID(vaultID)
+	userIDs, err := s.userIDsByVaultID(
+		vaultID,
+		authUser.ID,
+	)
 	if err != nil {
 		return err
 	}
@@ -209,8 +233,10 @@ func (s *Service) Delete(
 
 func (s *Service) userIDsByVaultID(
 	vaultID string,
+	excludeUserID string,
 ) ([]string, error) {
 	vaultID = strings.TrimSpace(vaultID)
+	excludeUserID = strings.TrimSpace(excludeUserID)
 
 	if vaultID == "" {
 		return nil, ErrVaultIDEmpty
@@ -229,6 +255,10 @@ func (s *Service) userIDsByVaultID(
 	for _, vaultAccess := range vaultAccessList {
 		for _, user := range vaultAccess.Permission.Users {
 			if user.ID == "" {
+				continue
+			}
+
+			if user.ID == excludeUserID {
 				continue
 			}
 

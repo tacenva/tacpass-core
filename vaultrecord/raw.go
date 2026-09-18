@@ -1,9 +1,11 @@
 package vaultrecord
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/tacenva/database"
+	"github.com/tacenva/tacpass-core/entity"
 	"github.com/tacenva/tacpass-core/internal/sync"
 	"github.com/tacenva/tacpass-core/internal/vaultaccess"
 	"gorm.io/gorm"
@@ -25,18 +27,70 @@ func NewRawService(
 }
 
 func (s *RawService) Blob(
+	authUser *entity.User,
 	vaultDir string,
 	vaultID string,
 ) ([]byte, error) {
-	vaultID = strings.TrimSpace(vaultID)
+	if authUser == nil || authUser.ID == "" {
+		return nil, ErrForbidden
+	}
 
+	vaultID = strings.TrimSpace(vaultID)
 	if vaultID == "" {
 		return nil, ErrVaultIDEmpty
 	}
 
 	db := database.New(vaultDir)
 
-	return db.Read(vaultID)
+	blob, err := db.Read(vaultID)
+	if err != nil {
+		return nil, err
+	}
+
+	entityName := s.getEntityName(vaultID)
+
+	changes, err := s.syncService.GetPendingChanges(
+		authUser.ID,
+		entityName,
+		500,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(changes) == 0 {
+		return blob, nil
+	}
+
+	changeIDs := make(
+		[]string,
+		0,
+		len(changes),
+	)
+
+	for _, change := range changes {
+		changeIDs = append(
+			changeIDs,
+			change.ID,
+		)
+	}
+
+	if err := s.syncService.Transaction(func(tx *gorm.DB) error {
+		if err := s.syncService.MarkSynced(
+			tx,
+			authUser.ID,
+			entityName,
+			changeIDs,
+		); err != nil {
+			return err
+		}
+
+		return s.syncService.CleanupChanges(tx)
+	}); err != nil {
+		return nil, err
+	}
+
+	return blob, nil
 }
 
 func (s *RawService) Init(
@@ -62,11 +116,16 @@ func (s *RawService) Init(
 }
 
 func (s *RawService) Create(
+	authUser *entity.User,
 	vaultDir string,
 	vaultID string,
 	data []byte,
 ) (string, error) {
 	vaultID = strings.TrimSpace(vaultID)
+
+	if authUser == nil || authUser.ID == "" {
+		return "", ErrForbidden
+	}
 
 	if vaultID == "" {
 		return "", ErrVaultIDEmpty
@@ -76,7 +135,10 @@ func (s *RawService) Create(
 		return "", ErrRecordDataEmpty
 	}
 
-	userIDs, err := s.userIDsByVaultID(vaultID)
+	userIDs, err := s.userIDsByVaultID(
+		vaultID,
+		authUser.ID,
+	)
 	if err != nil {
 		return "", err
 	}
@@ -88,7 +150,7 @@ func (s *RawService) Create(
 		return "", err
 	}
 
-	recordID, err := fileDB.InsertRaw(data)
+	recordID, err := fileDB.InsertRaw("", data)
 	if err != nil {
 		return "", err
 	}
@@ -112,6 +174,7 @@ func (s *RawService) Create(
 }
 
 func (s *RawService) Update(
+	authUser *entity.User,
 	vaultDir string,
 	vaultID string,
 	recordID string,
@@ -119,6 +182,10 @@ func (s *RawService) Update(
 ) error {
 	vaultID = strings.TrimSpace(vaultID)
 	recordID = strings.TrimSpace(recordID)
+
+	if authUser == nil || authUser.ID == "" {
+		return ErrForbidden
+	}
 
 	if vaultID == "" {
 		return ErrVaultIDEmpty
@@ -132,7 +199,10 @@ func (s *RawService) Update(
 		return ErrRecordDataEmpty
 	}
 
-	userIDs, err := s.userIDsByVaultID(vaultID)
+	userIDs, err := s.userIDsByVaultID(
+		vaultID,
+		authUser.ID,
+	)
 	if err != nil {
 		return err
 	}
@@ -180,12 +250,17 @@ func (s *RawService) Destroy(
 }
 
 func (s *RawService) Delete(
+	authUser *entity.User,
 	vaultDir string,
 	vaultID string,
 	recordID string,
 ) error {
 	vaultID = strings.TrimSpace(vaultID)
 	recordID = strings.TrimSpace(recordID)
+
+	if authUser == nil || authUser.ID == "" {
+		return ErrForbidden
+	}
 
 	if vaultID == "" {
 		return ErrVaultIDEmpty
@@ -195,7 +270,10 @@ func (s *RawService) Delete(
 		return ErrRecordIDEmpty
 	}
 
-	userIDs, err := s.userIDsByVaultID(vaultID)
+	userIDs, err := s.userIDsByVaultID(
+		vaultID,
+		authUser.ID,
+	)
 	if err != nil {
 		return err
 	}
@@ -226,8 +304,10 @@ func (s *RawService) Delete(
 
 func (s *RawService) userIDsByVaultID(
 	vaultID string,
+	excludeUserID string,
 ) ([]string, error) {
 	vaultID = strings.TrimSpace(vaultID)
+	excludeUserID = strings.TrimSpace(excludeUserID)
 
 	if vaultID == "" {
 		return nil, ErrVaultIDEmpty
@@ -246,6 +326,10 @@ func (s *RawService) userIDsByVaultID(
 	for _, vaultAccess := range vaultAccessList {
 		for _, user := range vaultAccess.Permission.Users {
 			if user.ID == "" {
+				continue
+			}
+
+			if user.ID == excludeUserID {
 				continue
 			}
 
@@ -313,9 +397,11 @@ func (s *RawService) GetPendingChanges(
 		return nil, ErrVaultIDEmpty
 	}
 
+	entityName := s.getEntityName(vaultID)
+
 	changes, err := s.syncService.GetPendingChanges(
 		userID,
-		s.getEntityName(vaultID),
+		entityName,
 		500,
 	)
 	if err != nil {
@@ -340,20 +426,30 @@ func (s *RawService) GetPendingChanges(
 			SyncChange: change,
 		}
 
-		if change.Operation != sync.OperationDelete {
-			record, err := fileDB.FindRaw(
-				change.EntityID,
-			)
-			if err != nil {
-				return nil, err
-			}
-
-			if record == nil {
-				continue
-			}
-
-			item.Record = record
+		if change.Operation == sync.OperationDelete {
+			result = append(result, item)
+			continue
 		}
+
+		if change.EntityID == "" {
+			return nil, fmt.Errorf(
+				"pending change %s has empty entity_id",
+				change.ID,
+			)
+		}
+
+		record, err := fileDB.FindRaw(
+			change.EntityID,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if record == nil {
+			continue
+		}
+
+		item.Record = record
 
 		result = append(result, item)
 	}
