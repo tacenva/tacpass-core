@@ -55,7 +55,7 @@ func (s *Service) List(
 		return nil, ErrPermission
 	}
 
-	return s.permissionService.List()
+	return s.permissionService.ListWithoutRevokedUsers()
 }
 
 func (s *Service) Create(
@@ -212,7 +212,7 @@ func (s *Service) InitAdminPrivilege(name string) (*entity.Permission, *keyring.
 }
 
 func (s *Service) ListInternal() ([]entity.Permission, error) {
-	return s.permissionService.List()
+	return s.permissionService.ListWithPendingUsers()
 }
 
 func (s *Service) GetInternal(

@@ -155,6 +155,17 @@ func (s *RawService) Update(
 	})
 }
 
+func (s *RawService) Destroy(
+	vaultID string,
+) error {
+	vaultID = strings.TrimSpace(vaultID)
+
+	if vaultID == "" {
+		return ErrVaultIDEmpty
+	}
+	return s.tacenvaDB.Destroy(vaultID)
+}
+
 func (s *RawService) Delete(
 	vaultID string,
 	recordID string,

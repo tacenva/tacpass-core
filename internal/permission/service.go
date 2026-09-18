@@ -110,8 +110,16 @@ func (s *Service) GetByPublicKey(publicKey string) (*entity.Permission, error) {
 	return permission, nil
 }
 
-func (s *Service) List() ([]entity.Permission, error) {
-	return s.repository.FindAll()
+func (s *Service) ListWithApprovedUsers() ([]entity.Permission, error) {
+	return s.repository.FindAllByUserStatus(entity.UserStatusApproved)
+}
+
+func (s *Service) ListWithPendingUsers() ([]entity.Permission, error) {
+	return s.repository.FindAllByUserStatus(entity.UserStatusPending)
+}
+
+func (s *Service) ListWithoutRevokedUsers() ([]entity.Permission, error) {
+	return s.repository.FindAllWithoutRevokedUsers()
 }
 
 func (s *Service) ChangeName(id string, name string) error {

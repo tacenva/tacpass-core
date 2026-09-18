@@ -115,6 +115,7 @@ func (r *repository) FindByVaultID(
 
 	err := r.db.
 		Preload("Permission.Users").
+		Preload("Vault").
 		Where("vault_id = ?", vaultID).
 		Find(&values).
 		Error

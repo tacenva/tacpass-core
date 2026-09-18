@@ -79,11 +79,53 @@ func (r *repository) FindByPublicKey(publicKey string) (*entity.Permission, erro
 	return &permission, nil
 }
 
-func (r *repository) FindAll() ([]entity.Permission, error) {
+func (r *repository) FindAllByUserStatus(status entity.UserStatus) ([]entity.Permission, error) {
 	var permissions []entity.Permission
 
 	err := r.db.
 		Preload("Users").
+		Where(
+			"EXISTS (?)",
+			r.db.
+				Model(&entity.User{}).
+				Select("1").
+				Where(
+					"users.permission_id = permissions.id",
+				).
+				Where(
+					"users.status = ?",
+					status,
+				),
+		).
+		Order("id ASC").
+		Find(&permissions).
+		Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return permissions, nil
+}
+
+func (r *repository) FindAllWithoutRevokedUsers() ([]entity.Permission, error) {
+	var permissions []entity.Permission
+
+	err := r.db.
+		Preload("Users").
+		Where(
+			"EXISTS (?)",
+			r.db.
+				Model(&entity.User{}).
+				Select("1").
+				Where(
+					"users.permission_id = permissions.id",
+				).
+				Where(
+					"users.status != ?",
+					entity.UserStatusRevoked,
+				),
+		).
 		Order("id ASC").
 		Find(&permissions).
 		Error
