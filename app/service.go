@@ -14,11 +14,11 @@ import (
 )
 
 type Services struct {
-	Auth               *auth.Service
-	AccessControl      *accesscontrol.Service
-	Vault              *vault.Service
-	VaultAccess        *vaultaccess.Service
-	VaultRecordService *vaultrecord.Service
+	Auth          *auth.Service
+	AccessControl *accesscontrol.Service
+	Vault         *vault.Service
+	VaultAccess   *vaultaccess.Service
+	VaultRecord   *vaultrecord.Service
 }
 
 func NewServices(
@@ -67,10 +67,10 @@ func NewServices(
 	)
 
 	return &Services{
-		Auth:               authService,
-		AccessControl:      accessControlService,
-		Vault:              vaultService,
-		VaultAccess:        vaultAccessService,
-		VaultRecordService: vaultRecordService,
+		Auth:          authService,
+		AccessControl: accessControlService,
+		Vault:         vaultService,
+		VaultAccess:   vaultAccessService,
+		VaultRecord:   vaultRecordService,
 	}
 }
