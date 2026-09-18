@@ -169,3 +169,7 @@ func (s *Service) Delete(id string) error {
 
 	return s.repository.Delete(id)
 }
+
+func (s *Service) FindAllIDsExcept(userID string) ([]string, error) {
+	return s.repository.FindAllIDsExcept(userID)
+}

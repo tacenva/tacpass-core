@@ -86,10 +86,7 @@ func (s *Service) Create(
 		return "", ErrRecordDataEmpty
 	}
 
-	userIDs, err := s.userIDsByVaultID(
-		vaultID,
-		authUser.ID,
-	)
+	userIDs, err := s.syncService.GetConnectedUserIDs(authUser)
 	if err != nil {
 		return "", err
 	}
@@ -147,10 +144,7 @@ func (s *Service) Update(
 		return ErrRecordIDEmpty
 	}
 
-	userIDs, err := s.userIDsByVaultID(
-		vaultID,
-		authUser.ID,
-	)
+	userIDs, err := s.syncService.GetConnectedUserIDs(authUser)
 	if err != nil {
 		return err
 	}
@@ -200,10 +194,7 @@ func (s *Service) Delete(
 		return ErrRecordIDEmpty
 	}
 
-	userIDs, err := s.userIDsByVaultID(
-		vaultID,
-		authUser.ID,
-	)
+	userIDs, err := s.syncService.GetConnectedUserIDs(authUser)
 	if err != nil {
 		return err
 	}
@@ -229,53 +220,6 @@ func (s *Service) Delete(
 		sync.OperationDelete,
 		userIDs,
 	)
-}
-
-func (s *Service) userIDsByVaultID(
-	vaultID string,
-	excludeUserID string,
-) ([]string, error) {
-	vaultID = strings.TrimSpace(vaultID)
-	excludeUserID = strings.TrimSpace(excludeUserID)
-
-	if vaultID == "" {
-		return nil, ErrVaultIDEmpty
-	}
-
-	vaultAccessList, err := s.vaultaccessService.FindByVaultID(
-		vaultID,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	userIDs := make([]string, 0)
-	seen := make(map[string]struct{})
-
-	for _, vaultAccess := range vaultAccessList {
-		for _, user := range vaultAccess.Permission.Users {
-			if user.ID == "" {
-				continue
-			}
-
-			if user.ID == excludeUserID {
-				continue
-			}
-
-			if _, ok := seen[user.ID]; ok {
-				continue
-			}
-
-			seen[user.ID] = struct{}{}
-
-			userIDs = append(
-				userIDs,
-				user.ID,
-			)
-		}
-	}
-
-	return userIDs, nil
 }
 
 func (s *Service) getEntityName(vaultID string) string {

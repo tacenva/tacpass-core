@@ -2,7 +2,6 @@ package vault
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/tacenva/database"
@@ -84,10 +83,10 @@ func (s *Service) Create(
 		Name: name,
 	}
 
-	userIDs := uniqueUserIDsFromPermissions(
-		permissionList,
-		authUser.ID,
-	)
+	connectedUserIDs, err := s.syncService.GetConnectedUserIDs(authUser)
+	if err != nil {
+		return nil, err
+	}
 
 	var newVaultAccessList []entity.VaultAccess
 
@@ -137,7 +136,7 @@ func (s *Service) Create(
 			syncEntityVault,
 			vault.ID,
 			sync.OperationCreate,
-			userIDs,
+			connectedUserIDs,
 		); err != nil {
 			return err
 		}
@@ -214,7 +213,7 @@ func (s *Service) Update(
 		return nil, ErrNotFound
 	}
 
-	userIDs, err := s.userIDsByVaultID(vault.ID, authUser.ID)
+	connectedUserIDs, err := s.syncService.GetConnectedUserIDs(authUser)
 	if err != nil {
 		return nil, err
 	}
@@ -231,7 +230,7 @@ func (s *Service) Update(
 			syncEntityVault,
 			vault.ID,
 			sync.OperationUpdate,
-			userIDs,
+			connectedUserIDs,
 		)
 	})
 
@@ -266,7 +265,7 @@ func (s *Service) Delete(
 		return ErrNotFound
 	}
 
-	userIDs, err := s.userIDsByVaultID(vault.ID, authUser.ID)
+	connectedUserIDs, err := s.syncService.GetConnectedUserIDs(authUser)
 	if err != nil {
 		return err
 	}
@@ -284,7 +283,7 @@ func (s *Service) Delete(
 			syncEntityVault,
 			vault.ID,
 			sync.OperationDelete,
-			userIDs,
+			connectedUserIDs,
 		)
 	})
 
@@ -300,91 +299,6 @@ func (s *Service) Delete(
 	}
 
 	return nil
-}
-
-func (s *Service) userIDsByVaultID(
-	vaultID string,
-	excludeUserID string,
-) ([]string, error) {
-	vaultID = strings.TrimSpace(vaultID)
-
-	if vaultID == "" {
-		return nil, ErrNotFound
-	}
-
-	vaultAccessList, err := s.vaultaccessService.FindByVaultID(
-		vaultID,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	userIDs := make([]string, 0)
-	seen := make(map[string]struct{})
-
-	for _, vaultAccess := range vaultAccessList {
-		for _, vaultAccessUser := range vaultAccess.Permission.Users {
-			if _, ok := seen[vaultAccessUser.ID]; ok {
-				continue
-			}
-			seen[vaultAccessUser.ID] = struct{}{}
-
-			if vaultAccessUser.ID == "" {
-				continue
-			}
-
-			if vaultAccessUser.ID == excludeUserID {
-				continue
-			}
-
-			if vaultAccessUser.Status != entity.UserStatusApproved {
-				continue
-			}
-
-			userIDs = append(
-				userIDs,
-				vaultAccessUser.ID,
-			)
-		}
-	}
-
-	return userIDs, nil
-}
-
-func uniqueUserIDsFromPermissions(
-	permissionList []entity.Permission,
-	excludeUserID string,
-) []string {
-	userIDs := make([]string, 0)
-	seen := make(map[string]struct{})
-
-	for _, permissionData := range permissionList {
-		for _, user := range permissionData.Users {
-			if _, ok := seen[user.ID]; ok {
-				continue
-			}
-			seen[user.ID] = struct{}{}
-
-			if user.ID == "" {
-				continue
-			}
-
-			if user.ID == excludeUserID {
-				continue
-			}
-
-			if user.Status != entity.UserStatusApproved {
-				continue
-			}
-
-			userIDs = append(
-				userIDs,
-				user.ID,
-			)
-		}
-	}
-
-	return userIDs
 }
 
 func (s *Service) IsVaultAccesible(
@@ -431,22 +345,6 @@ func (s *Service) GetPendingChanges(
 		return nil, err
 	}
 
-	fmt.Printf("=== GetPendingChanges ===\n")
-	fmt.Printf("authUser.ID: %s\n", authUser.ID)
-	fmt.Printf("authUser.PermissionID: %s\n", authUser.PermissionID)
-	fmt.Printf("changes count: %d\n", len(changes))
-
-	for i, change := range changes {
-		fmt.Printf(
-			"change[%d]: ID=%s Entity=%s EntityID=%s Operation=%s\n",
-			i,
-			change.ID,
-			change.Entity,
-			change.EntityID,
-			change.Operation,
-		)
-	}
-
 	result := make([]PendingVaultChange, 0, len(changes))
 
 	for _, change := range changes {
@@ -462,21 +360,7 @@ func (s *Service) GetPendingChanges(
 				return nil, err
 			}
 
-			fmt.Printf(
-				"vaultAccess for vaultID=%s: count=%d\n",
-				change.EntityID,
-				len(vaultAccessList),
-			)
-
 			for i := range vaultAccessList {
-				fmt.Printf(
-					"vaultAccess[%d]: ID=%s VaultID=%s PermissionID=%s\n",
-					i,
-					vaultAccessList[i].ID,
-					vaultAccessList[i].VaultID,
-					vaultAccessList[i].PermissionID,
-				)
-
 				if vaultAccessList[i].PermissionID != authUser.PermissionID {
 					continue
 				}
@@ -486,50 +370,11 @@ func (s *Service) GetPendingChanges(
 			}
 
 			if item.VaultAccess == nil {
-				fmt.Printf(
-					"NO MATCH: vaultID=%s permissionID=%s\n",
-					change.EntityID,
-					authUser.PermissionID,
-				)
 				continue
 			}
 		}
 
 		result = append(result, item)
-
-		fmt.Printf(
-			"result append: index=%d changeID=%s operation=%s vaultAccessNil=%t\n",
-			len(result)-1,
-			item.SyncChange.ID,
-			item.SyncChange.Operation,
-			item.VaultAccess == nil,
-		)
-	}
-
-	fmt.Printf("=== FINAL RESULT ===\n")
-	fmt.Printf("result count: %d\n", len(result))
-
-	for i, item := range result {
-		fmt.Printf(
-			"result[%d]: changeID=%s Entity=%s EntityID=%s Operation=%s\n",
-			i,
-			item.SyncChange.ID,
-			item.SyncChange.Entity,
-			item.SyncChange.EntityID,
-			item.SyncChange.Operation,
-		)
-
-		if item.VaultAccess != nil {
-			fmt.Printf(
-				"  VaultAccess: ID=%s VaultID=%s PermissionID=%s VaultName=%s\n",
-				item.VaultAccess.ID,
-				item.VaultAccess.VaultID,
-				item.VaultAccess.PermissionID,
-				item.VaultAccess.Vault.Name,
-			)
-		} else {
-			fmt.Printf("  VaultAccess: nil\n")
-		}
 	}
 
 	return result, nil

@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
+	"github.com/tacenva/tacpass-core/entity"
+	"github.com/tacenva/tacpass-core/internal/user"
 	"gorm.io/gorm"
 )
 
@@ -15,13 +17,22 @@ const (
 )
 
 type Service struct {
-	db *gorm.DB
+	db          *gorm.DB
+	userService *user.Service
 }
 
-func NewService(db *gorm.DB) *Service {
+func NewService(
+	db *gorm.DB,
+	userService *user.Service,
+) *Service {
 	return &Service{
-		db: db,
+		db:          db,
+		userService: userService,
 	}
+}
+
+func (s *Service) GetConnectedUserIDs(authUser *entity.User) ([]string, error) {
+	return s.userService.FindAllIDsExcept(authUser.ID)
 }
 
 func (s *Service) RecordChangeWithoutTx(

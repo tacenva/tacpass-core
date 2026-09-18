@@ -94,3 +94,18 @@ func (r *repository) Delete(id string) error {
 		Delete(&entity.User{}).
 		Error
 }
+
+func (r *repository) FindAllIDsExcept(userID string) ([]string, error) {
+	var userIDs []string
+
+	if err := r.db.
+		Model(&entity.User{}).
+		Where("id != ? AND status = ?", userID, entity.UserStatusApproved).
+		Order("hostname ASC").
+		Pluck("id", &userIDs).
+		Error; err != nil {
+		return nil, err
+	}
+
+	return userIDs, nil
+}

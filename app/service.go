@@ -37,7 +37,10 @@ func NewServices(
 		vaultaccess.NewRepository(sqliteDB),
 	)
 
-	syncService := sync.NewService(sqliteDB)
+	syncService := sync.NewService(
+		sqliteDB,
+		userService,
+	)
 	vaultService := vault.NewService(
 		vault.NewRepository(sqliteDB),
 		tacenvaDB,
