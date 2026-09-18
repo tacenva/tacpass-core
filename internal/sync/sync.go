@@ -24,6 +24,23 @@ func NewService(db *gorm.DB) *Service {
 	}
 }
 
+func (s *Service) RecordChangeWithoutTx(
+	entity string,
+	entityID string,
+	operation string,
+	userIDs []string,
+) error {
+	return s.Transaction(func(tx *gorm.DB) error {
+		return s.RecordChange(
+			tx,
+			entity,
+			entityID,
+			operation,
+			userIDs,
+		)
+	})
+}
+
 func (s *Service) RecordChange(
 	tx *gorm.DB,
 	entity string,

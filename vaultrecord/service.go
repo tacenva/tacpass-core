@@ -20,24 +20,22 @@ var (
 const syncEntityVaultRecord = "vault_record"
 
 type Service struct {
-	tacenvaDB          *database.DB
 	syncService        *sync.Service
 	vaultaccessService *vaultaccess.Service
 }
 
 func NewService(
-	tacenvaDB *database.DB,
 	syncService *sync.Service,
 	vaultaccessService *vaultaccess.Service,
 ) *Service {
 	return &Service{
-		tacenvaDB:          tacenvaDB,
 		syncService:        syncService,
 		vaultaccessService: vaultaccessService,
 	}
 }
 
 func (s *Service) List(
+	vaultDir string,
 	vaultKey string,
 	vaultID string,
 ) ([]entity.VaultRecord, error) {
@@ -47,9 +45,11 @@ func (s *Service) List(
 		return nil, ErrVaultIDEmpty
 	}
 
-	fileDB, err := s.tacenvaDB.File(
+	db := database.New(vaultDir)
+
+	fileDB, err := db.File(
 		vaultID,
-		string(vaultKey),
+		vaultKey,
 		database.FileModeOpenOrCreate,
 	)
 	if err != nil {
@@ -57,8 +57,8 @@ func (s *Service) List(
 	}
 
 	var records []entity.VaultRecord
-	err = fileDB.FindAll(&records)
-	if err != nil {
+
+	if err := fileDB.FindAll(&records); err != nil {
 		return nil, err
 	}
 
@@ -66,6 +66,7 @@ func (s *Service) List(
 }
 
 func (s *Service) Create(
+	vaultDir string,
 	vaultKey string,
 	vaultID string,
 	record *entity.VaultRecord,
@@ -85,9 +86,11 @@ func (s *Service) Create(
 		return "", err
 	}
 
-	fileDB, err := s.tacenvaDB.File(
+	db := database.New(vaultDir)
+
+	fileDB, err := db.File(
 		vaultID,
-		string(vaultKey),
+		vaultKey,
 		database.FileModeOpenOrCreate,
 	)
 	if err != nil {
@@ -99,8 +102,7 @@ func (s *Service) Create(
 		return "", err
 	}
 
-	if err := s.syncService.RecordChange(
-		nil,
+	if err := s.syncService.RecordChangeWithoutTx(
 		s.getEntityName(vaultID),
 		recordID,
 		sync.OperationCreate,
@@ -113,6 +115,7 @@ func (s *Service) Create(
 }
 
 func (s *Service) Update(
+	vaultDir string,
 	vaultKey string,
 	vaultID string,
 	record *entity.VaultRecord,
@@ -136,9 +139,11 @@ func (s *Service) Update(
 		return err
 	}
 
-	fileDB, err := s.tacenvaDB.File(
+	db := database.New(vaultDir)
+
+	fileDB, err := db.File(
 		vaultID,
-		string(vaultKey),
+		vaultKey,
 		database.FileModeOpenOrCreate,
 	)
 	if err != nil {
@@ -149,8 +154,7 @@ func (s *Service) Update(
 		return err
 	}
 
-	return s.syncService.RecordChange(
-		nil,
+	return s.syncService.RecordChangeWithoutTx(
 		s.getEntityName(vaultID),
 		record.ID,
 		sync.OperationUpdate,
@@ -159,6 +163,7 @@ func (s *Service) Update(
 }
 
 func (s *Service) Delete(
+	vaultDir string,
 	vaultKey string,
 	vaultID string,
 	recordID string,
@@ -179,22 +184,22 @@ func (s *Service) Delete(
 		return err
 	}
 
-	fileDB, err := s.tacenvaDB.File(
+	db := database.New(vaultDir)
+
+	fileDB, err := db.File(
 		vaultID,
-		string(vaultKey),
+		vaultKey,
 		database.FileModeOpenOrCreate,
 	)
 	if err != nil {
 		return err
 	}
 
-	_, err = fileDB.Delete(recordID)
-	if err != nil {
+	if _, err := fileDB.Delete(recordID); err != nil {
 		return err
 	}
 
-	return s.syncService.RecordChange(
-		nil,
+	return s.syncService.RecordChangeWithoutTx(
 		s.getEntityName(vaultID),
 		recordID,
 		sync.OperationDelete,

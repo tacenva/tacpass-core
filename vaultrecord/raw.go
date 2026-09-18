@@ -10,24 +10,22 @@ import (
 )
 
 type RawService struct {
-	tacenvaDB          *database.DB
 	syncService        *sync.Service
 	vaultaccessService *vaultaccess.Service
 }
 
 func NewRawService(
-	tacenvaDB *database.DB,
 	syncService *sync.Service,
 	vaultaccessService *vaultaccess.Service,
 ) *RawService {
 	return &RawService{
-		tacenvaDB:          tacenvaDB,
 		syncService:        syncService,
 		vaultaccessService: vaultaccessService,
 	}
 }
 
 func (s *RawService) Blob(
+	vaultDir string,
 	vaultID string,
 ) ([]byte, error) {
 	vaultID = strings.TrimSpace(vaultID)
@@ -36,10 +34,13 @@ func (s *RawService) Blob(
 		return nil, ErrVaultIDEmpty
 	}
 
-	return s.tacenvaDB.Read(vaultID)
+	db := database.New(vaultDir)
+
+	return db.Read(vaultID)
 }
 
 func (s *RawService) Init(
+	vaultDir string,
 	vaultID string,
 	vaultKey string,
 ) error {
@@ -49,7 +50,9 @@ func (s *RawService) Init(
 		return ErrVaultIDEmpty
 	}
 
-	_, err := s.tacenvaDB.File(
+	db := database.New(vaultDir)
+
+	_, err := db.File(
 		vaultID,
 		vaultKey,
 		database.FileModeOpenOrCreate,
@@ -59,6 +62,7 @@ func (s *RawService) Init(
 }
 
 func (s *RawService) Create(
+	vaultDir string,
 	vaultID string,
 	data []byte,
 ) (string, error) {
@@ -77,7 +81,9 @@ func (s *RawService) Create(
 		return "", err
 	}
 
-	fileDB, err := s.tacenvaDB.NewRawFile(vaultID)
+	db := database.New(vaultDir)
+
+	fileDB, err := db.NewRawFile(vaultID)
 	if err != nil {
 		return "", err
 	}
@@ -106,6 +112,7 @@ func (s *RawService) Create(
 }
 
 func (s *RawService) Update(
+	vaultDir string,
 	vaultID string,
 	recordID string,
 	data []byte,
@@ -130,7 +137,9 @@ func (s *RawService) Update(
 		return err
 	}
 
-	fileDB, err := s.tacenvaDB.NewRawFile(vaultID)
+	db := database.New(vaultDir)
+
+	fileDB, err := db.NewRawFile(vaultID)
 	if err != nil {
 		return err
 	}
@@ -156,6 +165,7 @@ func (s *RawService) Update(
 }
 
 func (s *RawService) Destroy(
+	vaultDir string,
 	vaultID string,
 ) error {
 	vaultID = strings.TrimSpace(vaultID)
@@ -163,10 +173,14 @@ func (s *RawService) Destroy(
 	if vaultID == "" {
 		return ErrVaultIDEmpty
 	}
-	return s.tacenvaDB.Destroy(vaultID)
+
+	db := database.New(vaultDir)
+
+	return db.Destroy(vaultID)
 }
 
 func (s *RawService) Delete(
+	vaultDir string,
 	vaultID string,
 	recordID string,
 ) error {
@@ -186,7 +200,9 @@ func (s *RawService) Delete(
 		return err
 	}
 
-	fileDB, err := s.tacenvaDB.NewRawFile(vaultID)
+	db := database.New(vaultDir)
+
+	fileDB, err := db.NewRawFile(vaultID)
 	if err != nil {
 		return err
 	}
@@ -282,6 +298,7 @@ type PendingVaultChange struct {
 }
 
 func (s *RawService) GetPendingChanges(
+	vaultDir string,
 	userID string,
 	vaultID string,
 ) ([]PendingVaultChange, error) {
@@ -305,7 +322,9 @@ func (s *RawService) GetPendingChanges(
 		return nil, err
 	}
 
-	fileDB, err := s.tacenvaDB.NewRawFile(vaultID)
+	db := database.New(vaultDir)
+
+	fileDB, err := db.NewRawFile(vaultID)
 	if err != nil {
 		return nil, err
 	}

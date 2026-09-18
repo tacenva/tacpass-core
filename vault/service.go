@@ -26,7 +26,7 @@ const syncEntityVault = "vault"
 
 type Service struct {
 	repository         *repository
-	VaultRecordService *vaultrecord.RawService
+	vaultRecordService *vaultrecord.RawService
 	vaultaccessService *vaultaccess.Service
 	permissionService  *permission.Service
 	syncService        *sync.Service
@@ -41,8 +41,7 @@ func NewService(
 ) *Service {
 	return &Service{
 		repository: repository,
-		VaultRecordService: vaultrecord.NewRawService(
-			tacenvaDB,
+		vaultRecordService: vaultrecord.NewRawService(
 			syncService,
 			vaultaccessService,
 		),
@@ -52,8 +51,13 @@ func NewService(
 	}
 }
 
+func (s *Service) GetVaultRecordRawService() *vaultrecord.RawService {
+	return s.vaultRecordService
+}
+
 func (s *Service) Create(
 	authUser *entity.User,
+	vaultDir string,
 	name string,
 ) (*entity.VaultAccess, error) {
 	if authUser == nil || !authUser.HasWritePermission() {
@@ -145,7 +149,8 @@ func (s *Service) Create(
 		return nil, err
 	}
 
-	if err := s.VaultRecordService.Init(
+	if err := s.vaultRecordService.Init(
+		vaultDir,
 		vault.ID,
 		vaultKey,
 	); err != nil {
@@ -239,6 +244,7 @@ func (s *Service) Update(
 
 func (s *Service) Delete(
 	authUser *entity.User,
+	vaultDir string,
 	id string,
 ) error {
 	if authUser == nil || !authUser.HasWritePermission() {
@@ -286,7 +292,8 @@ func (s *Service) Delete(
 		return err
 	}
 
-	if err := s.VaultRecordService.Destroy(
+	if err := s.vaultRecordService.Destroy(
+		vaultDir,
 		vault.ID,
 	); err != nil {
 		return err

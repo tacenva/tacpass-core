@@ -9,14 +9,16 @@ import (
 	"github.com/tacenva/tacpass-core/internal/user"
 	"github.com/tacenva/tacpass-core/internal/vaultaccess"
 	"github.com/tacenva/tacpass-core/vault"
+	"github.com/tacenva/tacpass-core/vaultrecord"
 	"gorm.io/gorm"
 )
 
 type Services struct {
-	Auth          *auth.Service
-	AccessControl *accesscontrol.Service
-	Vault         *vault.Service
-	VaultAccess   *vaultaccess.Service
+	Auth               *auth.Service
+	AccessControl      *accesscontrol.Service
+	Vault              *vault.Service
+	VaultAccess        *vaultaccess.Service
+	VaultRecordService *vaultrecord.Service
 }
 
 func NewServices(
@@ -44,6 +46,11 @@ func NewServices(
 		syncService,
 	)
 
+	vaultRecordService := vaultrecord.NewService(
+		syncService,
+		vaultAccessService,
+	)
+
 	accessControlService := accesscontrol.NewService(
 		userService,
 		permissionService,
@@ -57,9 +64,10 @@ func NewServices(
 	)
 
 	return &Services{
-		Auth:          authService,
-		AccessControl: accessControlService,
-		Vault:         vaultService,
-		VaultAccess:   vaultAccessService,
+		Auth:               authService,
+		AccessControl:      accessControlService,
+		Vault:              vaultService,
+		VaultAccess:        vaultAccessService,
+		VaultRecordService: vaultRecordService,
 	}
 }
