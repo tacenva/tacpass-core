@@ -29,6 +29,7 @@ func NewService(repository *repository) *Service {
 func (s *Service) Create(
 	name string,
 	privilege entity.Privilege,
+	group string,
 ) (*entity.Permission, *keyring.KeyPair, error) {
 	name = strings.TrimSpace(name)
 
@@ -48,6 +49,7 @@ func (s *Service) Create(
 	permission := &entity.Permission{
 		Name:      name,
 		Privilege: privilege,
+		Group:     group,
 		PublicKey: keyPair.PublicKey,
 		Revoked:   false,
 	}
@@ -120,6 +122,26 @@ func (s *Service) ListWithPendingUsers() ([]entity.Permission, error) {
 
 func (s *Service) ListWithoutRevokedUsers() ([]entity.Permission, error) {
 	return s.repository.FindAllWithoutRevokedUsers()
+}
+
+func (s *Service) ChangeGroup(id string, group string) error {
+	group = strings.TrimSpace(group)
+
+	if group == "" {
+		return ErrNameEmpty
+	}
+
+	permission, err := s.repository.Find(id)
+	if err != nil {
+		return err
+	}
+
+	if permission.Revoked {
+		return ErrRevoked
+	}
+
+	permission.Group = group
+	return s.repository.Update(permission)
 }
 
 func (s *Service) ChangeName(id string, name string) error {
@@ -216,4 +238,8 @@ func (s *Service) Delete(id string) error {
 	}
 
 	return s.repository.Delete(id)
+}
+
+func (s *Service) GetConnectedPermission(authUser *entity.User) ([]entity.Permission, error) {
+	return s.repository.GetConnectedPermission(authUser)
 }

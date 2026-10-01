@@ -43,7 +43,6 @@ func NewServices(
 	)
 	vaultService := vault.NewService(
 		vault.NewRepository(sqliteDB),
-		tacenvaDB,
 		vaultAccessService,
 		permissionService,
 		syncService,
@@ -51,7 +50,6 @@ func NewServices(
 
 	vaultRecordService := vaultrecord.NewService(
 		syncService,
-		vaultAccessService,
 	)
 
 	accessControlService := accesscontrol.NewService(

@@ -62,9 +62,18 @@ func (s *Service) Create(
 	authUser *entity.User,
 	name string,
 	privilege entity.Privilege,
+	group string,
 ) ([]entity.VaultAccess, *entity.Permission, *keyring.KeyPair, error) {
 	if !authUser.HasAdminPermission() {
 		return nil, nil, nil, ErrPermission
+	}
+
+	if privilege == entity.PrivilegeAdmin {
+		group = ""
+	}
+
+	if group == "" && privilege != entity.PrivilegeAdmin {
+		return nil, nil, nil, errors.ErrUnsupported
 	}
 
 	vaultAccessList, err := s.vaultService.VaultAccessList(authUser)
@@ -72,7 +81,7 @@ func (s *Service) Create(
 		return nil, nil, nil, err
 	}
 
-	permissionData, keyPair, err := s.permissionService.Create(name, privilege)
+	permissionData, keyPair, err := s.permissionService.Create(name, privilege, group)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -80,16 +89,16 @@ func (s *Service) Create(
 	return vaultAccessList, permissionData, keyPair, err
 }
 
-func (s *Service) GrantPrivilege(
+func (s *Service) ChangeGroup(
 	authUser *entity.User,
-	vaultAccessList []entity.VaultAccess,
+	id string,
+	group string,
 ) error {
 	if !authUser.HasAdminPermission() {
 		return ErrPermission
 	}
 
-	_, err := s.vaultAccessService.CreateBulk(vaultAccessList)
-	return err
+	return s.permissionService.ChangeGroup(id, group)
 }
 
 func (s *Service) ChangeName(
@@ -208,7 +217,7 @@ func (s *Service) InitAdminPrivilege(name string) (*entity.Permission, *keyring.
 		return nil, nil, errors.New("admin was initialized")
 	}
 
-	return s.permissionService.Create(name, entity.PrivilegeAdmin)
+	return s.permissionService.Create(name, entity.PrivilegeAdmin, "")
 }
 
 func (s *Service) ListInternal() ([]entity.Permission, error) {

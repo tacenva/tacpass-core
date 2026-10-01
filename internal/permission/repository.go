@@ -144,6 +144,7 @@ func (r *repository) Update(permission *entity.Permission) error {
 		Updates(map[string]any{
 			"name":      permission.Name,
 			"privilege": permission.Privilege,
+			"group":     permission.Group,
 			"revoked":   permission.Revoked,
 		}).
 		Error
@@ -154,4 +155,36 @@ func (r *repository) Delete(id string) error {
 		Where("id = ?", id).
 		Delete(&entity.Permission{}).
 		Error
+}
+
+func (r *repository) ListPublicKey() ([]entity.Permission, error) {
+	var permissions []entity.Permission
+	err := r.db.
+		Select("id", "public_key").
+		Find(&permissions).
+		Error
+	if err != nil {
+		return nil, err
+	}
+
+	return permissions, nil
+}
+
+func (r *repository) GetConnectedPermission(authUser *entity.User) ([]entity.Permission, error) {
+	if authUser.Permission.Privilege == entity.PrivilegeAdmin {
+		return r.ListPublicKey()
+	}
+
+	var permissions []entity.Permission
+	err := r.db.
+		Select("id", "public_key").
+		Where("group = ?", authUser.Permission.Group).
+		Find(&permissions).
+		Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return permissions, nil
 }

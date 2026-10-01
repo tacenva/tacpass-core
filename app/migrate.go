@@ -18,7 +18,5 @@ func Migrate(db *gorm.DB) error {
 		&entity.VaultAccess{},
 
 		&sync.SyncChange{},
-		&sync.SyncUserChange{},
-		&sync.SyncState{},
 	)
 }
