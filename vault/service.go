@@ -12,6 +12,7 @@ import (
 	"github.com/tacenva/tacpass-core/internal/sync"
 	"github.com/tacenva/tacpass-core/internal/vaultaccess"
 	"github.com/tacenva/tacpass-core/util/credential"
+	"github.com/tacenva/tacpass-core/util/keyring"
 	"github.com/tacenva/tacpass-core/vaultrecord"
 	"gorm.io/gorm"
 )
@@ -75,26 +76,11 @@ func (s *Service) GetConnectedPermission(
 	return s.permissionService.GetConnectedPermission(authUser)
 }
 
-func (s *Service) CreateOnSoT(
-	authUser *entity.User,
-	name string,
+func (s *Service) createOnSoT(
+	vault *entity.Vault,
 	sotID string,
 	lastChangeID *string,
 ) (*entity.Vault, error) {
-	if authUser == nil || !authUser.HasWritePermission() {
-		return nil, ErrPermission
-	}
-
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return nil, ErrNameEmpty
-	}
-
-	vault := &entity.Vault{
-		ID:   ulid.Make().String(),
-		Name: name,
-	}
-
 	err := s.repository.Transaction(func(tx *gorm.DB) error {
 		if err := s.repository.Create(tx, vault); err != nil {
 			return err
@@ -109,24 +95,73 @@ func (s *Service) CreateOnSoT(
 			sotID,
 		)
 	})
-	if err != nil {
-		return nil, err
-	}
-
-	return vault, nil
+	return vault, err
 }
 
-func (s *Service) CreateOnReplica(
+func (s *Service) CreateOnSoT(
 	authUser *entity.User,
 	name string,
 	sotID string,
 	lastChangeID *string,
-	dbFile *database.DatabaseFile,
 ) (*entity.VaultAccess, error) {
 	if authUser == nil || !authUser.HasWritePermission() {
 		return nil, ErrPermission
 	}
 
+	vault, err := s.createOnSoT(
+		&entity.Vault{
+			Name: name,
+		},
+		sotID,
+		lastChangeID,
+	)
+
+	connectedPermission, err := s.GetConnectedPermission(authUser)
+	if err != nil {
+		return nil, err
+	}
+
+	vaultKey, err := credential.Generate(32)
+	if err != nil {
+		return nil, err
+	}
+
+	vaList := make(
+		[]entity.VaultAccess,
+		0,
+		len(connectedPermission),
+	)
+
+	var vaData *entity.VaultAccess
+
+	for _, permissionData := range connectedPermission {
+		keyPair := keyring.FromPublicKey(permissionData.PublicKey)
+		wrappedVaultKey, err := keyPair.Seal([]byte(vaultKey))
+		if err != nil {
+			break
+		}
+
+		vaList = append(vaList, entity.VaultAccess{
+			VaultID:      vault.ID,
+			PermissionID: permissionData.ID,
+			VaultKey:     wrappedVaultKey,
+		})
+
+		if permissionData.ID == authUser.PermissionID {
+			vaData = &vaList[len(vaList)-1]
+			vaData.Vault = *vault
+		}
+	}
+
+	return vaData, nil
+}
+
+func (s *Service) CreateOnReplica(
+	name string,
+	sotID string,
+	lastChangeID *string,
+	dbFile *database.DatabaseFile,
+) (*entity.VaultAccess, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, ErrNameEmpty
@@ -143,11 +178,11 @@ func (s *Service) CreateOnReplica(
 	}
 
 	vaultAccess := &entity.VaultAccess{
-		ID:           ulid.Make().String(),
-		VaultID:      vault.ID,
-		PermissionID: authUser.PermissionID,
-		VaultKey:     vaultKey,
-		Vault:        *vault,
+		ID:      ulid.Make().String(),
+		VaultID: vault.ID,
+		// PermissionID: authUser.PermissionID,
+		VaultKey: vaultKey,
+		Vault:    *vault,
 	}
 
 	if _, err := dbFile.Insert(vaultAccess); err != nil {
@@ -223,7 +258,6 @@ func (s *Service) UpdateOnSoT(
 }
 
 func (s *Service) UpdateOnReplica(
-	authUser *entity.User,
 	id string,
 	name string,
 	sotID string,
@@ -231,10 +265,6 @@ func (s *Service) UpdateOnReplica(
 
 	dbFile *database.DatabaseFile,
 ) (*entity.Vault, error) {
-	if authUser == nil || !authUser.HasWritePermission() {
-		return nil, ErrPermission
-	}
-
 	id = strings.TrimSpace(id)
 	name = strings.TrimSpace(name)
 
@@ -335,7 +365,6 @@ func (s *Service) DeleteOnSoT(
 }
 
 func (s *Service) DeleteOnReplica(
-	authUser *entity.User,
 	vaultDir string,
 	id string,
 	sotID string,
@@ -343,10 +372,6 @@ func (s *Service) DeleteOnReplica(
 
 	dbFile *database.DatabaseFile,
 ) error {
-	if authUser == nil || !authUser.HasWritePermission() {
-		return ErrPermission
-	}
-
 	id = strings.TrimSpace(id)
 
 	if id == "" {
@@ -479,16 +504,11 @@ func (s *Service) GetChangesAfterOnSoT(
 }
 
 func (s *Service) GetChangesAfterOnReplica(
-	authUser *entity.User,
 	sotID string,
 	startID string,
 	limit int,
 	dbFile *database.DatabaseFile,
 ) ([]contract.PendingVaultChange, error) {
-	if authUser == nil || authUser.ID == "" {
-		return nil, ErrPermission
-	}
-
 	changes, err := s.syncService.GetChangesAfter(
 		sotID,
 		syncEntityVault,
@@ -540,7 +560,6 @@ func (s *Service) GetChangesAfterOnReplica(
 }
 
 func (s *Service) GetChangeCount(
-	authUser *entity.User,
 	sotID string,
 	startID string,
 ) (int64, error) {
@@ -551,7 +570,7 @@ func (s *Service) GetChangeCount(
 	)
 }
 
-func (s *Service) GiveAccess(
+func (s *Service) giveAccess(
 	vaultaccessList []entity.VaultAccess,
 ) error {
 	_, err := s.vaultaccessService.CreateBulk(vaultaccessList)
@@ -579,9 +598,8 @@ func (s *Service) SyncOnSoT(
 				return ErrNotFound
 			}
 
-			vault, err := s.CreateOnSoT(
-				authUser,
-				vaultChange.Vault.Name,
+			_, err := s.createOnSoT(
+				vaultChange.Vault,
 				sotID,
 				&vaultChange.SyncChange.ID,
 			)
@@ -589,9 +607,7 @@ func (s *Service) SyncOnSoT(
 				return err
 			}
 
-			vaultChange.Vault.ID = vault.ID
-
-			if err := s.GiveAccess(
+			if err := s.giveAccess(
 				vaultChange.VaultAccessList,
 			); err != nil {
 				return err
@@ -634,56 +650,32 @@ func (s *Service) SyncOnSoT(
 }
 
 func (s *Service) SyncOnReplica(
-	authUser *entity.User,
-	vaultDir string,
 	sotID string,
 	vaultChanges []contract.PendingVaultChange,
 	dbFile *database.DatabaseFile,
 ) error {
-	if authUser == nil || authUser.ID == "" {
-		return ErrPermission
-	}
-
 	if len(vaultChanges) == 0 {
 		return nil
 	}
 
 	for _, vaultChange := range vaultChanges {
+		vaData := vaultChange.VaultAccessList[0]
+		vaData.Vault = *vaultChange.Vault
 		switch vaultChange.SyncChange.Operation {
 		case sync.OperationCreate:
-			_, err := s.CreateOnReplica(
-				authUser,
-				vaultDir,
-				sotID,
-				&vaultChange.SyncChange.ID,
-				dbFile,
-			)
+			_, err := dbFile.Insert(vaData)
 			if err != nil {
 				return err
 			}
 
 		case sync.OperationUpdate:
-			_, err := s.UpdateOnReplica(
-				authUser,
-				vaultChange.Vault.ID,
-				vaultChange.Vault.Name,
-				sotID,
-				&vaultChange.SyncChange.ID,
-				dbFile,
-			)
+			err := dbFile.Update(vaData)
 			if err != nil {
 				return err
 			}
 
 		case sync.OperationDelete:
-			err := s.DeleteOnReplica(
-				authUser,
-				vaultDir,
-				vaultChange.Vault.ID,
-				sotID,
-				&vaultChange.SyncChange.ID,
-				dbFile,
-			)
+			_, err := dbFile.Delete(vaData.ID)
 			if err != nil {
 				return err
 			}
