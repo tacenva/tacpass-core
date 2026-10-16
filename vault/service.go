@@ -44,8 +44,9 @@ func NewService(
 		vaultRecordService: vaultrecord.NewService(
 			syncService,
 		),
-		permissionService: permissionService,
-		syncService:       syncService,
+		vaultaccessService: vaultaccessService,
+		permissionService:  permissionService,
+		syncService:        syncService,
 	}
 }
 
@@ -100,6 +101,7 @@ func (s *Service) createOnSoT(
 
 func (s *Service) CreateOnSoT(
 	authUser *entity.User,
+	vaultDir string,
 	name string,
 	sotID string,
 	lastChangeID *string,
@@ -115,6 +117,9 @@ func (s *Service) CreateOnSoT(
 		sotID,
 		lastChangeID,
 	)
+	if err != nil {
+		return nil, err
+	}
 
 	connectedPermission, err := s.GetConnectedPermission(authUser)
 	if err != nil {
@@ -132,8 +137,6 @@ func (s *Service) CreateOnSoT(
 		len(connectedPermission),
 	)
 
-	var vaData *entity.VaultAccess
-
 	for _, permissionData := range connectedPermission {
 		keyPair := keyring.FromPublicKey(permissionData.PublicKey)
 		wrappedVaultKey, err := keyPair.Seal([]byte(vaultKey))
@@ -146,14 +149,23 @@ func (s *Service) CreateOnSoT(
 			PermissionID: permissionData.ID,
 			VaultKey:     wrappedVaultKey,
 		})
+	}
 
-		if permissionData.ID == authUser.PermissionID {
+	vaListRes, err := s.vaultaccessService.CreateBulk(vaList)
+	var vaData *entity.VaultAccess
+	for _, vaPointer := range vaListRes {
+		if vaPointer.PermissionID == authUser.PermissionID {
 			vaData = &vaList[len(vaList)-1]
 			vaData.Vault = *vault
+
+			db := database.New(vaultDir)
+			_, _ = db.File(vault.ID, vaultKey, database.FileModeOpenOrCreate)
+
+			break
 		}
 	}
 
-	return vaData, nil
+	return vaData, err
 }
 
 func (s *Service) CreateOnReplica(

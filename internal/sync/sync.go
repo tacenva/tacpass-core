@@ -75,19 +75,19 @@ func (s *Service) RecordChange(
 		return fmt.Errorf("sync transaction is required")
 	}
 
-	var lastSequence uint64
+	// var lastSequence uint64
 
-	err := tx.
-		Model(&SyncChange{}).
-		Select("COALESCE(MAX(sequence), 0)").
-		Scan(&lastSequence).
-		Error
-	if err != nil {
-		return fmt.Errorf(
-			"get last sync sequence: %w",
-			err,
-		)
-	}
+	// err := tx.
+	// 	Model(&SyncChange{}).
+	// 	Select("COALESCE(MAX(sequence), 0)").
+	// 	Scan(&lastSequence).
+	// 	Error
+	// if err != nil {
+	// 	return fmt.Errorf(
+	// 		"get last sync sequence: %w",
+	// 		err,
+	// 	)
+	// }
 
 	unsynced := (*syncChangeID == "")
 	if unsynced {
@@ -102,7 +102,7 @@ func (s *Service) RecordChange(
 		Operation: operation,
 		CreatedAt: now,
 
-		SoTID: sotID,
+		SotID: sotID,
 	}
 
 	if err := tx.Create(&change).Error; err != nil {
@@ -114,7 +114,7 @@ func (s *Service) RecordChange(
 
 	if unsynced {
 		state := SyncState{
-			SoTID:        sotID,
+			SotID:        sotID,
 			Entity:       entity,
 			LastChangeID: change.ID,
 			UpdatedAt:    now,

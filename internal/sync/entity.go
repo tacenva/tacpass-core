@@ -12,16 +12,16 @@ const (
 
 type SyncChange struct {
 	ID        string        `json:"id" gorm:"type:varchar(26);primaryKey"`
-	Entity    string        `json:"entity" gorm:"type:varchar(100);primaryKey;index"`
+	Entity    string        `json:"entity" gorm:"type:varchar(100);index"`
 	EntityID  string        `json:"entity_id" gorm:"type:varchar(26);index;not null"`
 	Operation SyncOperation `json:"operation" gorm:"type:varchar(20);not null"`
 	CreatedAt time.Time     `json:"created_at" gorm:"not null"`
 
-	SoTID string `json:"sot_id" gorm:"type:varchar(26);index"`
+	SotID string `json:"sot_id" gorm:"type:varchar(26);index"`
 }
 
 type SyncState struct {
-	SoTID        string    `json:"sot_id" gorm:"type:varchar(26);primaryKey"`
+	SotID        string    `json:"sot_id" gorm:"type:varchar(26);primaryKey"`
 	Entity       string    `json:"entity" gorm:"type:varchar(100);primaryKey"`
 	LastChangeID string    `json:"last_change_id" gorm:"type:varchar(26);not null"`
 	UpdatedAt    time.Time `json:"updated_at" gorm:"not null"`
