@@ -125,6 +125,7 @@ func (s *Service) Create(
 			*recordID,
 			sync.OperationCreate,
 			sotID,
+			// sync.SotType,
 		)
 	})
 	if err != nil {
@@ -186,6 +187,7 @@ func (s *Service) Update(
 			recordID,
 			sync.OperationUpdate,
 			sotID,
+			// sync.SotType,
 		)
 	})
 }
@@ -249,6 +251,7 @@ func (s *Service) Delete(
 			recordID,
 			sync.OperationDelete,
 			sotID,
+			// sync.SotType,
 		)
 	})
 }

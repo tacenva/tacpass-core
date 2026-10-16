@@ -94,6 +94,7 @@ func (s *Service) createOnSoT(
 			vault.ID,
 			sync.OperationCreate,
 			sotID,
+			// sync.SotType,
 		)
 	})
 	return vault, err
@@ -157,10 +158,7 @@ func (s *Service) CreateOnSoT(
 		if vaPointer.PermissionID == authUser.PermissionID {
 			vaData = &vaList[len(vaList)-1]
 			vaData.Vault = *vault
-
-			db := database.New(vaultDir)
-			_, _ = db.File(vault.ID, vaultKey, database.FileModeOpenOrCreate)
-
+			err = s.vaultRecordService.Init(vaultDir, vaData.VaultID, vaultKey)
 			break
 		}
 	}
@@ -169,6 +167,7 @@ func (s *Service) CreateOnSoT(
 }
 
 func (s *Service) CreateOnReplica(
+	vaultDir string,
 	name string,
 	sotID string,
 	lastChangeID *string,
@@ -207,11 +206,12 @@ func (s *Service) CreateOnReplica(
 		vault.ID,
 		sync.OperationCreate,
 		sotID,
+		// sync.ReplicaType,
 	); err != nil {
 		return nil, err
 	}
-
-	return vaultAccess, nil
+	err = s.vaultRecordService.Init(vaultDir, vault.ID, vaultKey)
+	return vaultAccess, err
 }
 
 func (s *Service) UpdateOnSoT(
@@ -259,6 +259,7 @@ func (s *Service) UpdateOnSoT(
 			vault.ID,
 			sync.OperationUpdate,
 			sotID,
+			// sync.SotType,
 		)
 	})
 
@@ -288,18 +289,26 @@ func (s *Service) UpdateOnReplica(
 		return nil, ErrNameEmpty
 	}
 
-	var vault *entity.Vault
-	err := dbFile.Find(id, &vault)
+	var vaData entity.VaultAccess
+	err := dbFile.FindFirstWhere(&vaData, func(data map[string]any) bool {
+		vaultData, ok := data["vault"].(map[string]any)
+		if !ok {
+			return false
+		}
+
+		vaultID, ok := vaultData["id"].(string)
+		if !ok {
+			return false
+		}
+
+		return vaultID == id
+	})
 	if err != nil {
 		return nil, err
 	}
-	if vault == nil {
-		return nil, ErrNotFound
-	}
 
-	vault.Name = name
-
-	err = dbFile.Update(vault)
+	vaData.Vault.Name = name
+	err = dbFile.Update(&vaData)
 	if err != nil {
 		return nil, err
 	}
@@ -307,15 +316,16 @@ func (s *Service) UpdateOnReplica(
 	err = s.syncService.RecordChangeWithoutTx(
 		lastChangeID,
 		syncEntityVault,
-		vault.ID,
+		vaData.Vault.ID,
 		sync.OperationUpdate,
 		sotID,
+		// sync.ReplicaType,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	return vault, nil
+	return &vaData.Vault, nil
 }
 
 func (s *Service) DeleteOnSoT(
@@ -359,6 +369,7 @@ func (s *Service) DeleteOnSoT(
 			vault.ID,
 			sync.OperationDelete,
 			sotID,
+			// sync.SotType,
 		)
 	})
 
@@ -390,20 +401,25 @@ func (s *Service) DeleteOnReplica(
 		return ErrNotFound
 	}
 
-	var vault *entity.Vault
-	err := dbFile.Find(id, &vault)
+	var vaData entity.VaultAccess
+	err := dbFile.FindFirstWhere(&vaData, func(data map[string]any) bool {
+		vaultData, ok := data["vault"].(map[string]any)
+		if !ok {
+			return false
+		}
+
+		vaultID, ok := vaultData["id"].(string)
+		if !ok {
+			return false
+		}
+
+		return vaultID == id
+	})
 	if err != nil {
 		return err
 	}
-	if vault == nil {
-		return ErrNotFound
-	}
 
-	if vault == nil {
-		return ErrNotFound
-	}
-
-	_, err = dbFile.Delete(vault.ID)
+	_, err = dbFile.Delete(vaData.ID)
 	if err != nil {
 		return err
 	}
@@ -411,9 +427,10 @@ func (s *Service) DeleteOnReplica(
 	err = s.syncService.RecordChangeWithoutTx(
 		lastChangeID,
 		syncEntityVault,
-		vault.ID,
+		vaData.VaultID,
 		sync.OperationDelete,
 		sotID,
+		// sync.ReplicaType,
 	)
 	if err != nil {
 		return err
@@ -421,7 +438,7 @@ func (s *Service) DeleteOnReplica(
 
 	if err := s.vaultRecordService.Destroy(
 		vaultDir,
-		vault.ID,
+		vaData.VaultID,
 	); err != nil {
 		return err
 	}

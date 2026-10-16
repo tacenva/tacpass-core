@@ -10,6 +10,13 @@ const (
 	OperationDelete SyncOperation = "delete"
 )
 
+// type NodeType string
+
+// const (
+// 	SotType     NodeType = "source of truth"
+// 	ReplicaType NodeType = "replica"
+// )
+
 type SyncChange struct {
 	ID        string        `json:"id" gorm:"type:varchar(26);primaryKey"`
 	Entity    string        `json:"entity" gorm:"type:varchar(100);index"`
@@ -21,10 +28,11 @@ type SyncChange struct {
 }
 
 type SyncState struct {
-	SotID        string    `json:"sot_id" gorm:"type:varchar(26);primaryKey"`
-	Entity       string    `json:"entity" gorm:"type:varchar(100);primaryKey"`
-	LastChangeID string    `json:"last_change_id" gorm:"type:varchar(26);not null"`
-	UpdatedAt    time.Time `json:"updated_at" gorm:"not null"`
+	SotID        string `json:"sot_id" gorm:"type:varchar(26);primaryKey"`
+	Entity       string `json:"entity" gorm:"type:varchar(100);primaryKey"`
+	LastChangeID string `json:"last_change_id" gorm:"type:varchar(26);not null"`
+	// NodeType     NodeType  `json:"node_type" gorm:"not null"`
+	UpdatedAt time.Time `json:"updated_at" gorm:"not null"`
 
 	LastChange SyncChange `json:"last_change" gorm:"foreignKey:LastChangeID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT"`
 }

@@ -31,6 +31,7 @@ func (s *Service) RecordChangeWithoutTx(
 	entityID string,
 	operation SyncOperation,
 	sotID string,
+	// nodeType NodeType,
 ) error {
 	return s.Transaction(func(tx *gorm.DB) error {
 		return s.RecordChange(
@@ -40,6 +41,7 @@ func (s *Service) RecordChangeWithoutTx(
 			entityID,
 			operation,
 			sotID,
+			// nodeType,
 		)
 	})
 }
@@ -51,6 +53,7 @@ func (s *Service) RecordChange(
 	entityID string,
 	operation SyncOperation,
 	sotID string,
+	// nodeType NodeType,
 ) error {
 	if entity == "" {
 		return fmt.Errorf("sync entity is required")
@@ -112,12 +115,13 @@ func (s *Service) RecordChange(
 		)
 	}
 
-	if unsynced {
+	if !unsynced {
 		state := SyncState{
 			SotID:        sotID,
 			Entity:       entity,
 			LastChangeID: change.ID,
-			UpdatedAt:    now,
+			// NodeType:     nodeType,
+			UpdatedAt: now,
 		}
 
 		if err := tx.
@@ -209,9 +213,10 @@ func (s *Service) GetSyncState(
 		Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return SyncState{}, fmt.Errorf(
-				"sync state not found",
-			)
+			return SyncState{}, nil
+			// return SyncState{}, fmt.Errorf(
+			// 	"sync state not found",
+			// )
 		}
 
 		return SyncState{}, fmt.Errorf(
@@ -236,9 +241,9 @@ func (s *Service) GetChangeCount(
 		return 0, fmt.Errorf("sync entity is required")
 	}
 
-	if startID == "" {
-		return 0, fmt.Errorf("start id is required")
-	}
+	// if startID == "" {
+	// 	return 0, fmt.Errorf("start id is required")
+	// }
 
 	var count int64
 
