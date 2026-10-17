@@ -56,9 +56,9 @@ func (s *Service) RecordChange(
 		return fmt.Errorf("sync entity is required")
 	}
 
-	if entityID == "" {
-		return fmt.Errorf("sync entity id is required")
-	}
+	// if entityID == "" {
+	// 	return fmt.Errorf("sync entity id is required")
+	// }
 
 	switch operation {
 	case OperationCreate,

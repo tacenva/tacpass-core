@@ -482,19 +482,21 @@ func (s *Service) GetChangesAfterOnSoT(
 			SyncChange: change,
 		}
 
-		if change.Operation != sync.OperationDelete {
-			vault, err := s.repository.FindByID(
-				change.EntityID,
-			)
-			if err != nil {
+		vault, err := s.repository.FindByID(
+			change.EntityID,
+		)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				vault = &entity.Vault{
+					ID: change.EntityID,
+				}
+			} else {
 				return nil, err
 			}
+		}
 
-			if vault == nil {
-				continue
-			}
-
-			item.Vault = vault
+		item.Vault = vault
+		if change.Operation != sync.OperationDelete {
 
 			vaultAccessList, err := s.vaultaccessService.FindByVaultID(
 				change.EntityID,
@@ -691,28 +693,27 @@ func (s *Service) SyncOnReplica(
 	}
 
 	for _, vaultChange := range vaultChanges {
-		vaData := vaultChange.VaultAccessList[0]
+		var vaData entity.VaultAccess
+		if len(vaultChange.VaultAccessList) > 0 {
+			vaData = vaultChange.VaultAccessList[0]
+		}
 		vaData.Vault = *vaultChange.Vault
+		// vaDebug, err := json.MarshalIndent(vaData, "", "  ")
+		// if err != nil {
+		// 	fmt.Printf("[DEBUG] Gagal marshal vaDebug: %v\n", err)
+		// } else {
+		// 	fmt.Printf(
+		// 		"\n[DEBUG] vaDebug :\n%s\n",
+		// 		string(vaDebug),
+		// 	)
+		// }
+
 		switch vaultChange.SyncChange.Operation {
 		case sync.OperationCreate:
 			_, err := dbFile.Insert(&vaData)
 			if err != nil {
 				return err
 			}
-
-			// vaultKey, err := keypair.Open(vaData.VaultKey)
-			// if err != nil {
-			// 	return err
-			// }
-
-			// err = s.vaultRecordService.Init(
-			// 	vaultDir,
-			// 	vaData.VaultID,
-			// 	string(vaultKey),
-			// )
-			// if err != nil {
-			// 	return err
-			// }
 
 		case sync.OperationUpdate:
 			err := dbFile.Update(&vaData)
@@ -721,7 +722,15 @@ func (s *Service) SyncOnReplica(
 			}
 
 		case sync.OperationDelete:
-			_, err := dbFile.Delete(vaData.ID)
+			foundVa, err := s.findVAOnReplica(
+				vaultChange.Vault.ID,
+				dbFile,
+			)
+			if err != nil {
+				return err
+			}
+
+			_, err = dbFile.Delete(foundVa.ID)
 			if err != nil {
 				return err
 			}
@@ -742,79 +751,79 @@ func (s *Service) SyncOnReplica(
 	return nil
 }
 
-func (s *Service) DiffVaultChanges(
-	base []contract.PendingVaultChange,
-	changes []contract.PendingVaultChange,
-) []contract.PendingVaultChange {
-	baseChanges := s.normalizeVaultChanges(base)
-	sourceChanges := s.normalizeVaultChanges(changes)
+// func (s *Service) DiffVaultChanges(
+// 	base []contract.PendingVaultChange,
+// 	changes []contract.PendingVaultChange,
+// ) []contract.PendingVaultChange {
+// 	baseChanges := s.normalizeVaultChanges(base)
+// 	sourceChanges := s.normalizeVaultChanges(changes)
 
-	result := make(
-		[]contract.PendingVaultChange,
-		0,
-		len(sourceChanges),
-	)
+// 	result := make(
+// 		[]contract.PendingVaultChange,
+// 		0,
+// 		len(sourceChanges),
+// 	)
 
-	for entityID, sourceChange := range sourceChanges {
-		baseChange, exists := baseChanges[entityID]
+// 	for entityID, sourceChange := range sourceChanges {
+// 		baseChange, exists := baseChanges[entityID]
 
-		if !exists {
-			if sourceChange.SyncChange.Operation != sync.OperationDelete {
-				result = append(result, sourceChange)
-			}
-			continue
-		}
+// 		if !exists {
+// 			if sourceChange.SyncChange.Operation != sync.OperationDelete {
+// 				result = append(result, sourceChange)
+// 			}
+// 			continue
+// 		}
 
-		if baseChange.SyncChange.ID >= sourceChange.SyncChange.ID {
-			continue
-		}
+// 		if baseChange.SyncChange.ID >= sourceChange.SyncChange.ID {
+// 			continue
+// 		}
 
-		result = append(result, sourceChange)
-	}
+// 		result = append(result, sourceChange)
+// 	}
 
-	return result
-}
+// 	return result
+// }
 
-func (s *Service) normalizeVaultChanges(
-	changes []contract.PendingVaultChange,
-) map[string]contract.PendingVaultChange {
-	result := make(
-		map[string]contract.PendingVaultChange,
-	)
+// func (s *Service) normalizeVaultChanges(
+// 	changes []contract.PendingVaultChange,
+// ) map[string]contract.PendingVaultChange {
+// 	result := make(
+// 		map[string]contract.PendingVaultChange,
+// 	)
 
-	for _, change := range changes {
-		entityID := change.SyncChange.EntityID
+// 	for _, change := range changes {
+// 		entityID := change.SyncChange.EntityID
 
-		current, exists := result[entityID]
-		if !exists {
-			result[entityID] = change
-			continue
-		}
+// 		current, exists := result[entityID]
+// 		if !exists {
+// 			result[entityID] = change
+// 			continue
+// 		}
 
-		if current.SyncChange.Operation == sync.OperationCreate {
-			switch change.SyncChange.Operation {
-			case sync.OperationUpdate:
-				result[entityID] = change
+// 		if current.SyncChange.Operation == sync.OperationCreate {
+// 			switch change.SyncChange.Operation {
+// 			case sync.OperationUpdate:
+// 				result[entityID] = change
 
-			case sync.OperationDelete:
-				delete(result, entityID)
-			}
+// 			case sync.OperationDelete:
+// 				delete(result, entityID)
+// 			}
 
-			continue
-		}
+// 			continue
+// 		}
 
-		if current.SyncChange.Operation == sync.OperationDelete {
-			if current.SyncChange.ID < change.SyncChange.ID {
-				result[entityID] = change
-			}
+// 		if current.SyncChange.Operation == sync.OperationDelete {
+// 			if current.SyncChange.ID < change.SyncChange.ID {
+// 				result[entityID] = change
+// 			}
 
-			continue
-		}
+// 			continue
+// 		}
 
-		if current.SyncChange.ID < change.SyncChange.ID {
-			result[entityID] = change
-		}
-	}
+// 		if current.SyncChange.ID < change.SyncChange.ID {
+// 			result[entityID] = change
+// 		}
+// 	}
 
-	return result
-}
+// 	return result
+// }

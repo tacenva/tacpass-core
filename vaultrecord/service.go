@@ -415,85 +415,85 @@ func (s *Service) Sync(
 	return nil
 }
 
-func (s *Service) DiffRecordChanges(
-	base []contract.PendingVaultRecordChange,
-	changes []contract.PendingVaultRecordChange,
-) []contract.PendingVaultRecordChange {
-	baseChanges := s.normalizeRecordChanges(base)
-	sourceChanges := s.normalizeRecordChanges(changes)
+// func (s *Service) DiffRecordChanges(
+// 	base []contract.PendingVaultRecordChange,
+// 	changes []contract.PendingVaultRecordChange,
+// ) []contract.PendingVaultRecordChange {
+// 	baseChanges := s.normalizeRecordChanges(base)
+// 	sourceChanges := s.normalizeRecordChanges(changes)
 
-	result := make(
-		[]contract.PendingVaultRecordChange,
-		0,
-		len(sourceChanges),
-	)
+// 	result := make(
+// 		[]contract.PendingVaultRecordChange,
+// 		0,
+// 		len(sourceChanges),
+// 	)
 
-	for entityID, sourceChange := range sourceChanges {
-		baseChange, exists := baseChanges[entityID]
-		if !exists {
-			if sourceChange.SyncChange.Operation != sync.OperationDelete {
-				result = append(result, sourceChange)
-			}
-			continue
-		}
+// 	for entityID, sourceChange := range sourceChanges {
+// 		baseChange, exists := baseChanges[entityID]
+// 		if !exists {
+// 			if sourceChange.SyncChange.Operation != sync.OperationDelete {
+// 				result = append(result, sourceChange)
+// 			}
+// 			continue
+// 		}
 
-		if baseChange.SyncChange.ID >= sourceChange.SyncChange.ID {
-			continue
-		}
+// 		if baseChange.SyncChange.ID >= sourceChange.SyncChange.ID {
+// 			continue
+// 		}
 
-		result = append(result, sourceChange)
-	}
+// 		result = append(result, sourceChange)
+// 	}
 
-	return result
-}
+// 	return result
+// }
 
-func (s *Service) normalizeRecordChanges(
-	changes []contract.PendingVaultRecordChange,
-) map[string]contract.PendingVaultRecordChange {
-	result := make(
-		map[string]contract.PendingVaultRecordChange,
-	)
+// func (s *Service) normalizeRecordChanges(
+// 	changes []contract.PendingVaultRecordChange,
+// ) map[string]contract.PendingVaultRecordChange {
+// 	result := make(
+// 		map[string]contract.PendingVaultRecordChange,
+// 	)
 
-	for _, change := range changes {
-		entityID := change.SyncChange.EntityID
+// 	for _, change := range changes {
+// 		entityID := change.SyncChange.EntityID
 
-		current, exists := result[entityID]
-		if !exists {
-			result[entityID] = change
-			continue
-		}
+// 		current, exists := result[entityID]
+// 		if !exists {
+// 			result[entityID] = change
+// 			continue
+// 		}
 
-		if current.SyncChange.Operation == sync.OperationCreate {
-			switch change.SyncChange.Operation {
-			case sync.OperationUpdate:
-				// create + update = state terbaru tetap update
-				result[entityID] = change
+// 		if current.SyncChange.Operation == sync.OperationCreate {
+// 			switch change.SyncChange.Operation {
+// 			case sync.OperationUpdate:
+// 				// create + update = state terbaru tetap update
+// 				result[entityID] = change
 
-			case sync.OperationDelete:
-				// create + delete = tidak pernah perlu ada
-				delete(result, entityID)
-			}
+// 			case sync.OperationDelete:
+// 				// create + delete = tidak pernah perlu ada
+// 				delete(result, entityID)
+// 			}
 
-			continue
-		}
+// 			continue
+// 		}
 
-		if current.SyncChange.Operation == sync.OperationDelete {
-			// Setelah delete, change berikutnya harus punya
-			// ID yang lebih baru agar menghidupkan record lagi.
-			if current.SyncChange.ID < change.SyncChange.ID {
-				result[entityID] = change
-			}
+// 		if current.SyncChange.Operation == sync.OperationDelete {
+// 			// Setelah delete, change berikutnya harus punya
+// 			// ID yang lebih baru agar menghidupkan record lagi.
+// 			if current.SyncChange.ID < change.SyncChange.ID {
+// 				result[entityID] = change
+// 			}
 
-			continue
-		}
+// 			continue
+// 		}
 
-		if current.SyncChange.ID < change.SyncChange.ID {
-			result[entityID] = change
-		}
-	}
+// 		if current.SyncChange.ID < change.SyncChange.ID {
+// 			result[entityID] = change
+// 		}
+// 	}
 
-	return result
-}
+// 	return result
+// }
 
 func (s *Service) List(
 	vaultDir string,

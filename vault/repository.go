@@ -1,8 +1,6 @@
 package vault
 
 import (
-	"errors"
-
 	"github.com/tacenva/tacpass-core/entity"
 	"gorm.io/gorm"
 )
@@ -40,9 +38,9 @@ func (r *repository) FindByID(
 		First(&vault).
 		Error
 
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil
-	}
+	// if errors.Is(err, gorm.ErrRecordNotFound) {
+	// 	return nil, nil
+	// }
 
 	if err != nil {
 		return nil, err
