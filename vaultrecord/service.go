@@ -50,7 +50,7 @@ func (s *Service) Blob(
 
 	db := database.New(vaultDir)
 
-	blob, err := db.Read(vaultID)
+	blob, err := db.ReadMetadataOnly(vaultID)
 	if err != nil {
 		return nil, err
 	}

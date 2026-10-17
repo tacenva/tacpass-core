@@ -31,7 +31,6 @@ func (s *Service) RecordChangeWithoutTx(
 	entityID string,
 	operation SyncOperation,
 	sotID string,
-	// nodeType NodeType,
 ) error {
 	return s.Transaction(func(tx *gorm.DB) error {
 		return s.RecordChange(
@@ -41,7 +40,6 @@ func (s *Service) RecordChangeWithoutTx(
 			entityID,
 			operation,
 			sotID,
-			// nodeType,
 		)
 	})
 }
@@ -53,7 +51,6 @@ func (s *Service) RecordChange(
 	entityID string,
 	operation SyncOperation,
 	sotID string,
-	// nodeType NodeType,
 ) error {
 	if entity == "" {
 		return fmt.Errorf("sync entity is required")
@@ -120,8 +117,7 @@ func (s *Service) RecordChange(
 			SotID:        sotID,
 			Entity:       entity,
 			LastChangeID: change.ID,
-			// NodeType:     nodeType,
-			UpdatedAt: now,
+			UpdatedAt:    now,
 		}
 
 		if err := tx.
@@ -156,9 +152,9 @@ func (s *Service) GetChangesAfter(
 		return nil, fmt.Errorf("sync entity is required")
 	}
 
-	if startID == "" {
-		return nil, fmt.Errorf("current id is required")
-	}
+	// if startID == "" {
+	// 	return nil, fmt.Errorf("current id is required")
+	// }
 
 	if limit <= 0 {
 		limit = 500
