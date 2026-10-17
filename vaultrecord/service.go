@@ -496,15 +496,10 @@ func (s *Service) normalizeRecordChanges(
 }
 
 func (s *Service) List(
-	authUser *entity.User,
 	vaultDir string,
 	vaultID string,
 	vaultKey string,
 ) ([]entity.VaultRecord, error) {
-	if authUser == nil || authUser.ID == "" {
-		return nil, ErrForbidden
-	}
-
 	vaultID = strings.TrimSpace(vaultID)
 	if vaultID == "" {
 		return nil, ErrVaultIDEmpty

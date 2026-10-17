@@ -172,6 +172,8 @@ func (s *Service) CreateOnReplica(
 	sotID string,
 	lastChangeID *string,
 	dbFile *database.DatabaseFile,
+
+	keypair *keyring.KeyPair,
 ) (*entity.VaultAccess, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -188,11 +190,13 @@ func (s *Service) CreateOnReplica(
 		Name: name,
 	}
 
+	keyPair := keyring.FromPublicKey(keypair.PublicKey)
+	wrappedVaultKey, err := keyPair.Seal([]byte(vaultKey))
+
 	vaultAccess := &entity.VaultAccess{
-		ID:      ulid.Make().String(),
-		VaultID: vault.ID,
-		// PermissionID: authUser.PermissionID,
-		VaultKey: vaultKey,
+		ID:       ulid.Make().String(),
+		VaultID:  vault.ID,
+		VaultKey: wrappedVaultKey,
 		Vault:    *vault,
 	}
 
@@ -270,6 +274,27 @@ func (s *Service) UpdateOnSoT(
 	return vault, nil
 }
 
+func (s *Service) findVAOnReplica(
+	vaultID string,
+	dbFile *database.DatabaseFile,
+) (*entity.VaultAccess, error) {
+	var vaData entity.VaultAccess
+	err := dbFile.FindFirstWhere(&vaData, func(data map[string]any) bool {
+		vaultData, ok := data["vault"].(map[string]any)
+		if !ok {
+			return false
+		}
+
+		id, ok := vaultData["id"].(string)
+		if !ok {
+			return false
+		}
+
+		return vaultID == id
+	})
+	return &vaData, err
+}
+
 func (s *Service) UpdateOnReplica(
 	id string,
 	name string,
@@ -289,20 +314,7 @@ func (s *Service) UpdateOnReplica(
 		return nil, ErrNameEmpty
 	}
 
-	var vaData entity.VaultAccess
-	err := dbFile.FindFirstWhere(&vaData, func(data map[string]any) bool {
-		vaultData, ok := data["vault"].(map[string]any)
-		if !ok {
-			return false
-		}
-
-		vaultID, ok := vaultData["id"].(string)
-		if !ok {
-			return false
-		}
-
-		return vaultID == id
-	})
+	vaData, err := s.findVAOnReplica(id, dbFile)
 	if err != nil {
 		return nil, err
 	}
@@ -401,20 +413,7 @@ func (s *Service) DeleteOnReplica(
 		return ErrNotFound
 	}
 
-	var vaData entity.VaultAccess
-	err := dbFile.FindFirstWhere(&vaData, func(data map[string]any) bool {
-		vaultData, ok := data["vault"].(map[string]any)
-		if !ok {
-			return false
-		}
-
-		vaultID, ok := vaultData["id"].(string)
-		if !ok {
-			return false
-		}
-
-		return vaultID == id
-	})
+	vaData, err := s.findVAOnReplica(id, dbFile)
 	if err != nil {
 		return err
 	}
