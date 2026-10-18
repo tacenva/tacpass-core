@@ -202,7 +202,11 @@ func (s *Service) Destroy(
 
 	db := database.New(vaultDir)
 
-	return db.Destroy(vaultID)
+	err := db.Destroy(vaultID)
+	if err == database.ErrFileNotFound {
+		return nil
+	}
+	return err
 }
 
 func (s *Service) Delete(

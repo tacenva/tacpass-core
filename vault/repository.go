@@ -74,6 +74,19 @@ func (r *repository) Update(
 		Error
 }
 
+func (r *repository) FirstOrCreate(
+	tx *gorm.DB,
+	vault *entity.Vault,
+) error {
+	return tx.
+		Where("id = ?", vault.ID).
+		Assign(map[string]any{
+			"name": vault.Name,
+		}).
+		FirstOrCreate(vault).
+		Error
+}
+
 func (r *repository) Delete(
 	tx *gorm.DB,
 	id string,

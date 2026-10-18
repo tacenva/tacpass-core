@@ -223,10 +223,6 @@ func (s *Service) GetChangeCount(
 		return 0, fmt.Errorf("sync entity is required")
 	}
 
-	// if startID == "" {
-	// 	return 0, fmt.Errorf("start id is required")
-	// }
-
 	var count int64
 
 	err := s.db.
@@ -266,27 +262,48 @@ func (s *Service) InsertSyncChanges(
 	entity string,
 	syncChanges []SyncChange,
 ) error {
-	lastSyncChange := syncChanges[len(syncChanges)-1]
+	if len(syncChanges) == 0 {
+		return nil
+	}
 
 	return s.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&syncChanges).Error; err != nil {
 			return err
 		}
 
-		state := SyncState{
-			SotID:        sotID,
-			Entity:       entity,
-			LastChangeID: lastSyncChange.ID,
-			UpdatedAt:    time.Now(),
-		}
-
-		return tx.
-			Where(
-				"sot_id = ? AND entity = ?",
-				sotID,
-				entity,
-			).
-			Assign(state).
-			FirstOrCreate(&state).Error
+		return s.SetSyncStateToBeLastest(tx, sotID, entity)
 	})
+}
+
+func (s *Service) SetSyncStateToBeLastest(
+	tx *gorm.DB,
+	sotID string,
+	entity string,
+) error {
+	var lastChange SyncChange
+
+	err := tx.
+		Where("sot_id = ? AND entity = ?", sotID, entity).
+		Order("id DESC").
+		First(&lastChange).
+		Error
+	if err != nil {
+		return fmt.Errorf("get latest sync change: %w", err)
+	}
+
+	state := SyncState{
+		SotID:        sotID,
+		Entity:       entity,
+		LastChangeID: lastChange.ID,
+		UpdatedAt:    time.Now(),
+	}
+
+	return tx.
+		Where("sot_id = ? AND entity = ?", sotID, entity).
+		Assign(map[string]any{
+			"last_change_id": state.LastChangeID,
+			"updated_at":     state.UpdatedAt,
+		}).
+		FirstOrCreate(&state).
+		Error
 }
