@@ -12,7 +12,7 @@ const (
 
 type SyncChange struct {
 	ID        string        `json:"id" gorm:"type:varchar(26);primaryKey"`
-	SotID     string        `json:"sot_id" gorm:"type:varchar(26);primaryKey"`
+	SotID     string        `json:"-" gorm:"type:varchar(26);primaryKey"`
 	Entity    string        `json:"entity" gorm:"type:varchar(100);index"`
 	EntityID  string        `json:"entity_id" gorm:"type:varchar(26);index;not null"`
 	Operation SyncOperation `json:"operation" gorm:"type:varchar(20);not null"`

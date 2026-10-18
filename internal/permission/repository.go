@@ -170,7 +170,7 @@ func (r *repository) ListPublicKey() ([]entity.Permission, error) {
 	return permissions, nil
 }
 
-func (r *repository) GetConnectedPermission(authUser *entity.User) ([]entity.Permission, error) {
+func (r *repository) ConnectedPublicKeys(authUser *entity.User) ([]entity.Permission, error) {
 	if authUser.Permission.Privilege == entity.PrivilegeAdmin {
 		return r.ListPublicKey()
 	}

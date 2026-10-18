@@ -53,43 +53,44 @@ func (r *repository) CreateBulkTx(
 		Error
 }
 
-func (r *repository) UpdateBulk(
+func (r *repository) CreateOrUpdateBulkTx(
+	tx *gorm.DB,
 	vaultAccesses []*entity.VaultAccess,
 ) error {
 	if len(vaultAccesses) == 0 {
 		return nil
 	}
 
-	return r.db.Transaction(func(tx *gorm.DB) error {
-		for _, vaultAccess := range vaultAccesses {
-			if vaultAccess == nil {
-				continue
-			}
-
-			if vaultAccess.ID == "" {
-				return gorm.ErrInvalidData
-			}
-
-			result := tx.
-				Model(&entity.VaultAccess{}).
-				Where("id = ?", vaultAccess.ID).
-				Updates(map[string]any{
-					"vault_id":      vaultAccess.VaultID,
-					"permission_id": vaultAccess.PermissionID,
-					"vault_key":     vaultAccess.VaultKey,
-				})
-
-			if result.Error != nil {
-				return result.Error
-			}
-
-			if result.RowsAffected == 0 {
-				return gorm.ErrRecordNotFound
-			}
+	for _, vaultAccess := range vaultAccesses {
+		if vaultAccess == nil {
+			continue
 		}
 
-		return nil
-	})
+		if vaultAccess.ID == "" {
+			return gorm.ErrInvalidData
+		}
+
+		result := tx.
+			Model(&entity.VaultAccess{}).
+			Where("id = ?", vaultAccess.ID).
+			Updates(map[string]any{
+				"vault_id":      vaultAccess.VaultID,
+				"permission_id": vaultAccess.PermissionID,
+				"vault_key":     vaultAccess.VaultKey,
+			})
+
+		if result.Error != nil {
+			return result.Error
+		}
+
+		if result.RowsAffected == 0 {
+			if err := tx.Create(vaultAccess).Error; err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 func (r *repository) FindByPermissionID(
@@ -114,6 +115,7 @@ func (r *repository) FindByVaultID(
 	var values []entity.VaultAccess
 
 	err := r.db.
+		Select("id", "vault_id", "vault_key").
 		Preload("Permission.Users").
 		Preload("Vault").
 		Where("vault_id = ?", vaultID).

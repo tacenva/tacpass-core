@@ -2,6 +2,9 @@ package vault
 
 import (
 	"errors"
+	"log"
+	"slices"
+	"sort"
 	"strings"
 
 	"github.com/oklog/ulid/v2"
@@ -71,34 +74,11 @@ func (s *Service) VaultAccessList(
 	return vaultAccessList, nil
 }
 
-func (s *Service) GetConnectedPermission(
+func (s *Service) ConnectedPublicKeys(
 	authUser *entity.User,
 ) ([]entity.Permission, error) {
-	return s.permissionService.GetConnectedPermission(authUser)
+	return s.permissionService.ConnectedPublicKeys(authUser)
 }
-
-// func (s *Service) createOnSoT(
-// 	vault *entity.Vault,
-// 	sotID string,
-// 	lastChangeID *string,
-// ) (*entity.Vault, error) {
-// 	err := s.repository.Transaction(func(tx *gorm.DB) error {
-// 		if err := s.repository.Create(tx, vault); err != nil {
-// 			return err
-// 		}
-
-// 		return s.syncService.RecordChange(
-// 			tx,
-// 			lastChangeID,
-// 			syncEntityVault,
-// 			vault.ID,
-// 			sync.OperationCreate,
-// 			sotID,
-// 			// sync.SotType,
-// 		)
-// 	})
-// 	return vault, err
-// }
 
 func (s *Service) CreateOnSoT(
 	authUser *entity.User,
@@ -117,7 +97,7 @@ func (s *Service) CreateOnSoT(
 			return err
 		}
 
-		connectedPermission, err := s.GetConnectedPermission(authUser)
+		connectedPermission, err := s.ConnectedPublicKeys(authUser)
 		if err != nil {
 			return err
 		}
@@ -164,7 +144,6 @@ func (s *Service) CreateOnSoT(
 			vault.ID,
 			sync.OperationCreate,
 			sotID,
-			// sync.SotType,
 		)
 	})
 	return vaData, err
@@ -213,7 +192,6 @@ func (s *Service) CreateOnReplica(
 		vault.ID,
 		sync.OperationCreate,
 		sotID,
-		// sync.ReplicaType,
 	); err != nil {
 		return nil, err
 	}
@@ -259,7 +237,6 @@ func (s *Service) UpdateOnSoT(
 			vault.ID,
 			sync.OperationUpdate,
 			sotID,
-			// sync.SotType,
 		)
 	})
 
@@ -326,7 +303,6 @@ func (s *Service) UpdateOnReplica(
 		vaData.Vault.ID,
 		sync.OperationUpdate,
 		sotID,
-		// sync.ReplicaType,
 	)
 	if err != nil {
 		return nil, err
@@ -376,7 +352,6 @@ func (s *Service) DeleteOnSoT(
 			vault.ID,
 			sync.OperationDelete,
 			sotID,
-			// sync.SotType,
 		)
 	})
 
@@ -424,7 +399,6 @@ func (s *Service) DeleteOnReplica(
 		vaData.VaultID,
 		sync.OperationDelete,
 		sotID,
-		// sync.ReplicaType,
 	)
 	if err != nil {
 		return err
@@ -490,6 +464,7 @@ func (s *Service) GetChangesAfterOnSoT(
 				vault = &entity.Vault{
 					ID: change.EntityID,
 				}
+				err = nil
 			} else {
 				return nil, err
 			}
@@ -497,7 +472,6 @@ func (s *Service) GetChangesAfterOnSoT(
 
 		item.Vault = vault
 		if change.Operation != sync.OperationDelete {
-
 			vaultAccessList, err := s.vaultaccessService.FindByVaultID(
 				change.EntityID,
 			)
@@ -595,120 +569,122 @@ func (s *Service) GetChangeCount(
 	)
 }
 
-func (s *Service) giveAccess(
-	vaultaccessList []entity.VaultAccess,
+func (s *Service) MergePendingVaultChange(
+	base []contract.PendingVaultChange,
+	comp []contract.PendingVaultChange,
+) []contract.PendingVaultChange {
+	clonedBase := slices.Clone(base)
+	merged := make(map[string]contract.PendingVaultChange)
+	for _, change := range clonedBase {
+		if change.Vault == nil {
+			continue
+		}
+
+		vaultID := change.Vault.ID
+		existing, exist := merged[vaultID]
+		if existing.SyncChange.Operation == sync.OperationDelete {
+			continue
+		}
+
+		if !exist || change.SyncChange.ID > existing.SyncChange.ID {
+			merged[vaultID] = change
+		}
+	}
+
+	for _, change := range comp {
+		if change.Vault == nil {
+			continue
+		}
+
+		vaultID := change.Vault.ID
+		existing, exists := merged[vaultID]
+		if exists {
+			if existing.SyncChange.Operation == sync.OperationDelete {
+				continue
+			}
+
+			if change.SyncChange.ID > existing.SyncChange.ID {
+				merged[vaultID] = change
+			}
+		}
+	}
+
+	result := make([]contract.PendingVaultChange, 0, len(merged))
+	for _, change := range merged {
+		result = append(result, change)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].SyncChange.ID < result[j].SyncChange.ID
+	})
+
+	return result
+}
+
+func (s *Service) ApplyChangeOnSoT(
+	vaultChanges []contract.PendingVaultChange,
 ) error {
-	_, err := s.vaultaccessService.CreateBulk(vaultaccessList)
+	err := s.repository.Transaction(func(tx *gorm.DB) error {
+		for _, change := range vaultChanges {
+			// debug, _ := json.MarshalIndent(change.VaultAccessList, "", "  ")
+			// log.Printf(
+			// 	"[DEBUG] Change[%d] Operation=%s VaultID=%s VaultAccessList Count=%d\n%s",
+			// 	i,
+			// 	change.SyncChange.Operation,
+			// 	change.Vault.ID,
+			// 	len(change.VaultAccessList),
+			// 	debug,
+			// )
+
+			vault := change.Vault
+
+			switch change.SyncChange.Operation {
+			case sync.OperationCreate:
+				if err := s.repository.Create(tx, vault); err != nil {
+					return err
+				}
+
+				if err := s.vaultaccessService.CreateOrUpdateBulkTx(tx, change.VaultAccessList); err != nil {
+					return err
+				}
+
+			case sync.OperationUpdate:
+				if err := s.repository.Update(tx, vault); err != nil {
+					return err
+				}
+
+				if err := s.vaultaccessService.CreateOrUpdateBulkTx(tx, change.VaultAccessList); err != nil {
+					return err
+				}
+
+			case sync.OperationDelete:
+				if err := s.repository.Delete(tx, vault.ID); err != nil {
+					return err
+				}
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		log.Printf("[ERROR] ApplyChangeOnSoT failed: %v", err)
+	}
+
 	return err
 }
 
-func (s *Service) SyncOnSoT(
-	authUser *entity.User,
-	vaultDir string,
-	sotID string,
-	vaultChanges []contract.PendingVaultChange,
-) error {
-	if authUser == nil || authUser.ID == "" {
-		return ErrPermission
-	}
-
-	if len(vaultChanges) == 0 {
-		return nil
-	}
-
-	for _, vaultChange := range vaultChanges {
-		switch vaultChange.SyncChange.Operation {
-		case sync.OperationCreate:
-			if vaultChange.Vault == nil {
-				return ErrNotFound
-			}
-
-			// _, err := s.createOnSoT(
-			// 	vaultChange.Vault,
-			// 	sotID,
-			// 	&vaultChange.SyncChange.ID,
-			// )
-			_, err := s.CreateOnSoT(
-				authUser,
-				vaultDir,
-				vaultChange.Vault,
-				sotID,
-				&vaultChange.SyncChange.ID,
-			)
-			if err != nil {
-				return err
-			}
-
-			if err := s.giveAccess(
-				vaultChange.VaultAccessList,
-			); err != nil {
-				return err
-			}
-
-		case sync.OperationUpdate:
-			if vaultChange.Vault == nil {
-				return ErrNotFound
-			}
-
-			_, err := s.UpdateOnSoT(
-				authUser,
-				vaultChange.Vault,
-				sotID,
-				&vaultChange.SyncChange.ID,
-			)
-			if err != nil {
-				return err
-			}
-
-		case sync.OperationDelete:
-			if vaultChange.Vault == nil {
-				return ErrNotFound
-			}
-
-			if err := s.DeleteOnSoT(
-				authUser,
-				vaultDir,
-				vaultChange.Vault.ID,
-				sotID,
-				&vaultChange.SyncChange.ID,
-			); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-func (s *Service) SyncOnReplica(
-	// vaultDir string,
-	sotID string,
+func (s *Service) ApplyChangeOnReplica(
 	vaultChanges []contract.PendingVaultChange,
 	dbFile *database.DatabaseFile,
-
-	// keypair *keyring.KeyPair,
 ) error {
-	if len(vaultChanges) == 0 {
-		return nil
-	}
-
-	for _, vaultChange := range vaultChanges {
+	for _, change := range vaultChanges {
 		var vaData entity.VaultAccess
-		if len(vaultChange.VaultAccessList) > 0 {
-			vaData = vaultChange.VaultAccessList[0]
+		if len(change.VaultAccessList) > 0 {
+			vaData = change.VaultAccessList[0]
 		}
-		vaData.Vault = *vaultChange.Vault
-		// vaDebug, err := json.MarshalIndent(vaData, "", "  ")
-		// if err != nil {
-		// 	fmt.Printf("[DEBUG] Gagal marshal vaDebug: %v\n", err)
-		// } else {
-		// 	fmt.Printf(
-		// 		"\n[DEBUG] vaDebug :\n%s\n",
-		// 		string(vaDebug),
-		// 	)
-		// }
+		vaData.Vault = *change.Vault
 
-		switch vaultChange.SyncChange.Operation {
+		switch change.SyncChange.Operation {
 		case sync.OperationCreate:
 			_, err := dbFile.Insert(&vaData)
 			if err != nil {
@@ -718,15 +694,21 @@ func (s *Service) SyncOnReplica(
 		case sync.OperationUpdate:
 			err := dbFile.Update(&vaData)
 			if err != nil {
+				if err == database.RecordNotFound {
+					continue
+				}
 				return err
 			}
 
 		case sync.OperationDelete:
 			foundVa, err := s.findVAOnReplica(
-				vaultChange.Vault.ID,
+				change.Vault.ID,
 				dbFile,
 			)
 			if err != nil {
+				if err == database.RecordNotFound {
+					continue
+				}
 				return err
 			}
 
@@ -735,95 +717,53 @@ func (s *Service) SyncOnReplica(
 				return err
 			}
 		}
-
-		if err := s.syncService.RecordChangeWithoutTx(
-			&vaultChange.SyncChange.ID,
-			syncEntityVault,
-			vaData.VaultID,
-			sync.OperationCreate,
-			sotID,
-			// sync.ReplicaType,
-		); err != nil {
-			return err
-		}
 	}
-
 	return nil
 }
 
-// func (s *Service) DiffVaultChanges(
-// 	base []contract.PendingVaultChange,
-// 	changes []contract.PendingVaultChange,
-// ) []contract.PendingVaultChange {
-// 	baseChanges := s.normalizeVaultChanges(base)
-// 	sourceChanges := s.normalizeVaultChanges(changes)
+func (s *Service) insertSyncChanges(
+	sotID string,
+	vaultChanges []contract.PendingVaultChange,
+) error {
+	if len(vaultChanges) == 0 {
+		return nil
+	}
 
-// 	result := make(
-// 		[]contract.PendingVaultChange,
-// 		0,
-// 		len(sourceChanges),
-// 	)
+	syncChanges := make([]sync.SyncChange, len(vaultChanges))
 
-// 	for entityID, sourceChange := range sourceChanges {
-// 		baseChange, exists := baseChanges[entityID]
+	for i, change := range vaultChanges {
+		syncChanges[i] = change.SyncChange
+		syncChanges[i].SotID = sotID
+	}
 
-// 		if !exists {
-// 			if sourceChange.SyncChange.Operation != sync.OperationDelete {
-// 				result = append(result, sourceChange)
-// 			}
-// 			continue
-// 		}
+	return s.syncService.InsertSyncChanges(
+		sotID,
+		syncEntityVault,
+		syncChanges,
+	)
+}
 
-// 		if baseChange.SyncChange.ID >= sourceChange.SyncChange.ID {
-// 			continue
-// 		}
+func (s *Service) SyncOnReplica(
+	sotID string,
+	replicaChanges []contract.PendingVaultChange,
+	sotChanges []contract.PendingVaultChange,
+	dbFile *database.DatabaseFile,
+) error {
+	changes := s.MergePendingVaultChange(sotChanges, replicaChanges)
+	if err := s.ApplyChangeOnReplica(changes, dbFile); err != nil {
+		return err
+	}
 
-// 		result = append(result, sourceChange)
-// 	}
+	return s.insertSyncChanges(sotID, sotChanges)
+}
 
-// 	return result
-// }
+func (s *Service) SyncOnSoT(
+	sotID string,
+	changes []contract.PendingVaultChange,
+) error {
+	if err := s.ApplyChangeOnSoT(changes); err != nil {
+		return err
+	}
 
-// func (s *Service) normalizeVaultChanges(
-// 	changes []contract.PendingVaultChange,
-// ) map[string]contract.PendingVaultChange {
-// 	result := make(
-// 		map[string]contract.PendingVaultChange,
-// 	)
-
-// 	for _, change := range changes {
-// 		entityID := change.SyncChange.EntityID
-
-// 		current, exists := result[entityID]
-// 		if !exists {
-// 			result[entityID] = change
-// 			continue
-// 		}
-
-// 		if current.SyncChange.Operation == sync.OperationCreate {
-// 			switch change.SyncChange.Operation {
-// 			case sync.OperationUpdate:
-// 				result[entityID] = change
-
-// 			case sync.OperationDelete:
-// 				delete(result, entityID)
-// 			}
-
-// 			continue
-// 		}
-
-// 		if current.SyncChange.Operation == sync.OperationDelete {
-// 			if current.SyncChange.ID < change.SyncChange.ID {
-// 				result[entityID] = change
-// 			}
-
-// 			continue
-// 		}
-
-// 		if current.SyncChange.ID < change.SyncChange.ID {
-// 			result[entityID] = change
-// 		}
-// 	}
-
-// 	return result
-// }
+	return s.insertSyncChanges(sotID, changes)
+}

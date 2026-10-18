@@ -56,9 +56,9 @@ func (s *Service) RecordChange(
 		return fmt.Errorf("sync entity is required")
 	}
 
-	// if entityID == "" {
-	// 	return fmt.Errorf("sync entity id is required")
-	// }
+	if entityID == "" {
+		return fmt.Errorf("sync entity id is required")
+	}
 
 	switch operation {
 	case OperationCreate,
@@ -74,20 +74,6 @@ func (s *Service) RecordChange(
 	if tx == nil {
 		return fmt.Errorf("sync transaction is required")
 	}
-
-	// var lastSequence uint64
-
-	// err := tx.
-	// 	Model(&SyncChange{}).
-	// 	Select("COALESCE(MAX(sequence), 0)").
-	// 	Scan(&lastSequence).
-	// 	Error
-	// if err != nil {
-	// 	return fmt.Errorf(
-	// 		"get last sync sequence: %w",
-	// 		err,
-	// 	)
-	// }
 
 	unsynced := (*syncChangeID == "")
 	if unsynced {
@@ -273,4 +259,34 @@ func (s *Service) Transaction(
 	}
 
 	return s.db.Transaction(fn)
+}
+
+func (s *Service) InsertSyncChanges(
+	sotID string,
+	entity string,
+	syncChanges []SyncChange,
+) error {
+	lastSyncChange := syncChanges[len(syncChanges)-1]
+
+	return s.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&syncChanges).Error; err != nil {
+			return err
+		}
+
+		state := SyncState{
+			SotID:        sotID,
+			Entity:       entity,
+			LastChangeID: lastSyncChange.ID,
+			UpdatedAt:    time.Now(),
+		}
+
+		return tx.
+			Where(
+				"sot_id = ? AND entity = ?",
+				sotID,
+				entity,
+			).
+			Assign(state).
+			FirstOrCreate(&state).Error
+	})
 }

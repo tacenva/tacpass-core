@@ -240,6 +240,6 @@ func (s *Service) Delete(id string) error {
 	return s.repository.Delete(id)
 }
 
-func (s *Service) GetConnectedPermission(authUser *entity.User) ([]entity.Permission, error) {
-	return s.repository.GetConnectedPermission(authUser)
+func (s *Service) ConnectedPublicKeys(authUser *entity.User) ([]entity.Permission, error) {
+	return s.repository.ConnectedPublicKeys(authUser)
 }

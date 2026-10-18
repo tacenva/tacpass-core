@@ -142,7 +142,8 @@ func (s *Service) CreateBulkTx(
 	return values, nil
 }
 
-func (s *Service) UpdateBulk(
+func (s *Service) CreateOrUpdateBulkTx(
+	tx *gorm.DB,
 	values []entity.VaultAccess,
 ) error {
 	if len(values) == 0 {
@@ -159,7 +160,7 @@ func (s *Service) UpdateBulk(
 		vaultAccesses[i] = &values[i]
 	}
 
-	return s.repository.UpdateBulk(vaultAccesses)
+	return s.repository.CreateOrUpdateBulkTx(tx, vaultAccesses)
 }
 
 func (s *Service) IsVaultAccesible(

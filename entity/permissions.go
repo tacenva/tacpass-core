@@ -18,7 +18,7 @@ type Permission struct {
 	Name      string    `json:"name" gorm:"type:varchar(100);not null;uniqueIndex"`
 	Privilege Privilege `json:"privilege" gorm:"type:varchar(10);not null"`
 	Group     string    `json:"group" gorm:"type:varchar(100);not null;default:'';index"`
-	PublicKey string    `json:"-" gorm:"type:text;not null"`
+	PublicKey string    `json:"public_key" gorm:"type:text;not null"`
 	Revoked   bool      `json:"revoked" gorm:"not null;default:false"`
 
 	Users    []User        `json:"users,omitempty" gorm:"foreignKey:PermissionID;references:ID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE"`

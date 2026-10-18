@@ -38,10 +38,6 @@ func (r *repository) FindByID(
 		First(&vault).
 		Error
 
-	// if errors.Is(err, gorm.ErrRecordNotFound) {
-	// 	return nil, nil
-	// }
-
 	if err != nil {
 		return nil, err
 	}
