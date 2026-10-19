@@ -37,7 +37,7 @@ func NewService(
 	}
 }
 
-func (s *Service) Blob(
+func (s *Service) GetBlob(
 	authUser *entity.User,
 	vaultDir string,
 	vaultID string,
@@ -60,6 +60,32 @@ func (s *Service) Blob(
 	}
 
 	return blob, nil
+}
+
+func (s *Service) StoreBlob(
+	authUser *entity.User,
+	vaultDir string,
+	vaultID string,
+	sotID string,
+	data []byte,
+) error {
+	if authUser == nil || authUser.ID == "" {
+		return ErrForbidden
+	}
+
+	vaultID = strings.TrimSpace(vaultID)
+	if vaultID == "" {
+		return ErrVaultIDEmpty
+	}
+
+	db := database.New(vaultDir)
+
+	err := db.Write(vaultID, data)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (s *Service) Init(
@@ -524,4 +550,18 @@ func (s *Service) Sync(
 	}
 
 	return s.insertSyncChanges(sotID, vaultID, changeBase)
+}
+
+func (s *Service) SetSyncStateToBeLastest(
+	sotID string,
+	vaultID string,
+) error {
+	entityName := s.getEntityName(vaultID)
+	return s.syncService.Transaction(func(tx *gorm.DB) error {
+		return s.syncService.SetSyncStateToBeLastest(
+			tx,
+			sotID,
+			entityName,
+		)
+	})
 }

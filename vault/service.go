@@ -838,3 +838,15 @@ func (s *Service) SyncOnSoT(
 
 	return s.insertSyncChanges(sotID, changes)
 }
+
+func (s *Service) SetSyncStateToBeLastest(
+	sotID string,
+) error {
+	return s.syncService.Transaction(func(tx *gorm.DB) error {
+		return s.syncService.SetSyncStateToBeLastest(
+			tx,
+			sotID,
+			syncEntityVault,
+		)
+	})
+}
