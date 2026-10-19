@@ -13,6 +13,10 @@ type PendingVaultChange struct {
 
 type PendingVaultRecordChange struct {
 	SyncChange sync.SyncChange `json:"sync_change"`
-	RecordID   string          `json:"reco,omitempty"`
+	RecordID   string          `json:"recordID,omitempty"`
 	Record     []byte          `json:"record,omitempty"`
+}
+
+type PendingTotalChanges struct {
+	Count int64 `json:"count"`
 }

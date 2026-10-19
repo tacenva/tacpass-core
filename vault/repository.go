@@ -54,6 +54,7 @@ func (r *repository) FindAccessible(
 		Where("permission_id = ?", permissionID).
 		Preload("Vault").
 		Find(&vaultAccessList).
+		Order("id ASC").
 		Error
 
 	if err != nil {

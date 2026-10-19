@@ -1,7 +1,9 @@
 package vault
 
 import (
+	"encoding/json"
 	"errors"
+	"log"
 	"slices"
 	"sort"
 	"strings"
@@ -471,26 +473,32 @@ func (s *Service) GetChangesAfterOnSoT(
 		if change.Operation != sync.OperationDelete {
 			vaultAccessList, err := s.vaultaccessService.FindByVaultID(
 				change.EntityID,
+				authUser.PermissionID,
 			)
+			log.Printf("VaultID : %s", change.EntityID)
+			data, _ := json.MarshalIndent(vaultAccessList, "", "  ")
+			log.Printf("[DEBUG] FindByVaultID result:\n%s", string(data))
+
 			if err != nil {
 				return nil, err
 			}
 
-			for _, vaData := range vaultAccessList {
-				if vaData.PermissionID != authUser.PermissionID {
-					continue
-				}
+			item.VaultAccessList = vaultAccessList
 
-				item.VaultAccessList = append(item.VaultAccessList, entity.VaultAccess{
-					ID:           vaData.ID,
-					VaultID:      vaData.VaultID,
-					PermissionID: vaData.PermissionID,
-					VaultKey:     vaData.VaultKey,
-				})
+			// for _, vaData := range vaultAccessList {
+			// 	if vaData.PermissionID != authUser.PermissionID {
+			// 		continue
+			// 	}
 
-				item.Vault = &vaData.Vault
-				break
-			}
+			// 	item.VaultAccessList = append(item.VaultAccessList, entity.VaultAccess{
+			// 		ID:           vaData.ID,
+			// 		VaultID:      vaData.VaultID,
+			// 		PermissionID: vaData.PermissionID,
+			// 		VaultKey:     vaData.VaultKey,
+			// 	})
+
+			// 	break
+			// }
 		}
 
 		result = append(result, item)
@@ -635,7 +643,7 @@ func (s *Service) MergePendingVaultChange(
 	// 	log.Printf("[DEBUG] MergePendingVaultChange: BASE sebelum merge:\n%s", string(baseJSON))
 	// }
 
-	// Debug: tampilkan isi comp sebelum proses merge
+	// // Debug: tampilkan isi comp sebelum proses merge
 	// compJSON, err := json.MarshalIndent(comp, "", "  ")
 	// if err != nil {
 	// 	log.Printf("[DEBUG] MergePendingVaultChange: gagal marshal comp: %v", err)
@@ -658,19 +666,12 @@ func (s *Service) MergePendingVaultChange(
 		// 	change.Vault == nil,
 		// )
 
-		// if change.Vault == nil {
-		// 	log.Printf("[DEBUG][Merge][BASE][%d] SKIP: Vault is nil\n", i)
-		// 	continue
-		// }
-
 		vaultID := change.SyncChange.EntityID
 		existing, exists := merged[vaultID]
 
-		if exists && existing.SyncChange.Operation == sync.OperationDelete {
-			// log.Printf(
-			// 	"[DEBUG][Merge][BASE][%d] SKIP: existing change is DELETE, vaultID=%s\n",
-			// 	i, vaultID,
-			// )
+		if exists && (existing.SyncChange.Operation == sync.OperationDelete ||
+			(existing.SyncChange.Operation == sync.OperationCreate &&
+				change.SyncChange.Operation == sync.OperationUpdate)) {
 			continue
 		}
 
@@ -691,17 +692,17 @@ func (s *Service) MergePendingVaultChange(
 	for _, change := range comp {
 		// log.Printf(
 		// 	"[DEBUG][Merge][COMP][%d] ID=%s EntityID=%s Operation=%s VaultNil=%t\n",
-		// 	i,
+		// 	i,change
 		// 	change.SyncChange.ID,
 		// 	change.SyncChange.EntityID,
 		// 	change.SyncChange.Operation,
 		// 	change.Vault == nil,
 		// )
 
-		// if change.Vault == nil {
-		// 	log.Printf("[DEBUG][Merge][COMP][%d] SKIP: Vault is nil\n", i)
-		// 	continue
-		// }
+		if change.Vault == nil {
+			// log.Printf("[DEBUG][Merge][COMP][%d] SKIP: Vault is nil\n", i)
+			continue
+		}
 
 		vaultID := change.SyncChange.EntityID
 		existing, exists := merged[vaultID]
@@ -823,6 +824,13 @@ func (s *Service) ApplyChangeOnReplica(
 	dbFile *database.DatabaseFile,
 ) error {
 	for _, change := range vaultChanges {
+		changeJSON, err := json.MarshalIndent(change, "", "  ")
+		if err != nil {
+			log.Printf("[DEBUG] Gagal marshal change: %v", err)
+		} else {
+			log.Printf("[DEBUG] ApplyChangeOnReplica change:\n%s", string(changeJSON))
+		}
+
 		var vaData entity.VaultAccess
 		if len(change.VaultAccessList) > 0 {
 			vaData = change.VaultAccessList[0]
