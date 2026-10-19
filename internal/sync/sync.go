@@ -271,11 +271,11 @@ func (s *Service) InsertSyncChanges(
 			return err
 		}
 
-		return s.SetSyncStateToBeLastest(tx, sotID, entity)
+		return s.setSyncStateToBeLastest(tx, sotID, entity)
 	})
 }
 
-func (s *Service) SetSyncStateToBeLastest(
+func (s *Service) setSyncStateToBeLastest(
 	tx *gorm.DB,
 	sotID string,
 	entity string,

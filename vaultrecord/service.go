@@ -1,8 +1,10 @@
 package vaultrecord
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"slices"
 	"sort"
 	"strings"
@@ -306,7 +308,7 @@ func (s *Service) GetChangesAfter(
 			change.EntityID,
 		)
 		if err != nil {
-			if !errors.Is(err, database.RecordNotFound) {
+			if !errors.Is(err, database.ErrRecordNotFound) {
 				return nil, err
 			}
 		}
@@ -383,7 +385,7 @@ func (s *Service) List(
 	return records, nil
 }
 
-func (s *Service) MergePendingVaultRecordChange(
+func (s *Service) mergePendingVaultRecordChange(
 	base []contract.PendingVaultRecordChange,
 	comp []contract.PendingVaultRecordChange,
 ) []contract.PendingVaultRecordChange {
@@ -434,9 +436,8 @@ func (s *Service) MergePendingVaultRecordChange(
 	return result
 }
 
-func (s *Service) ApplyChange(
+func (s *Service) applyChange(
 	vaultDir string,
-	sotID string,
 	vaultID string,
 	recordChanges []contract.PendingVaultRecordChange,
 ) error {
@@ -448,7 +449,13 @@ func (s *Service) ApplyChange(
 	}
 
 	for _, change := range recordChanges {
-		recordID := change.RecordID
+		changeJSON, err := json.MarshalIndent(change, "", "  ")
+		if err != nil {
+			log.Printf("[DEBUG] Gagal marshal change: %v", err)
+		} else {
+			log.Printf("[DEBUG] applyChange change:\n%s", string(changeJSON))
+		}
+		recordID := change.SyncChange.EntityID
 		switch change.SyncChange.Operation {
 		case sync.OperationCreate:
 			err := fileDB.InsertRaw(&recordID, change.Record)
@@ -459,7 +466,7 @@ func (s *Service) ApplyChange(
 		case sync.OperationUpdate:
 			err := fileDB.UpdateRaw(recordID, change.Record)
 			if err != nil {
-				if !errors.Is(err, database.ErrFileNotFound) {
+				if !errors.Is(err, database.ErrRecordNotFound) {
 					return err
 				}
 			}
@@ -467,7 +474,7 @@ func (s *Service) ApplyChange(
 		case sync.OperationDelete:
 			err := fileDB.DeleteRaw(recordID)
 			if err != nil {
-				if !errors.Is(err, database.ErrFileNotFound) {
+				if !errors.Is(err, database.ErrRecordNotFound) {
 					return err
 				}
 			}
@@ -505,25 +512,16 @@ func (s *Service) Sync(
 	vaultDir string,
 	sotID string,
 	vaultID string,
-	changes []contract.PendingVaultRecordChange,
+	changeBase []contract.PendingVaultRecordChange,
+	changeComp []contract.PendingVaultRecordChange,
 ) error {
-	if err := s.ApplyChange(vaultDir, sotID, vaultID, changes); err != nil {
+	appliedChanges := s.mergePendingVaultRecordChange(
+		changeBase,
+		changeComp,
+	)
+	if err := s.applyChange(vaultDir, vaultID, appliedChanges); err != nil {
 		return err
 	}
 
-	return s.insertSyncChanges(sotID, vaultID, changes)
-}
-
-func (s *Service) SetSyncStateToBeLastest(
-	sotID string,
-	vaultID string,
-) error {
-	return s.syncService.Transaction(func(tx *gorm.DB) error {
-		entityName := s.getEntityName(vaultID)
-		return s.syncService.SetSyncStateToBeLastest(
-			tx,
-			sotID,
-			entityName,
-		)
-	})
+	return s.insertSyncChanges(sotID, vaultID, changeBase)
 }

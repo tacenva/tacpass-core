@@ -15,10 +15,10 @@ const (
 
 type User struct {
 	ID           string     `json:"id" gorm:"type:varchar(26);primaryKey"`
-	PermissionID string     `json:"permission_id" gorm:"type:varchar(26);not null"`
-	Hostname     string     `json:"hostname" gorm:"type:varchar(50);not null"`
-	Token        string     `json:"token" gorm:"type:varchar(128);not null"`
-	Status       UserStatus `json:"status" gorm:"type:varchar(20);not null"`
+	PermissionID string     `json:"permission_id,omitempty" gorm:"type:varchar(26);not null"`
+	Hostname     string     `json:"hostname,omitempty" gorm:"type:varchar(50);not null"`
+	Token        string     `json:"token,omitempty" gorm:"type:varchar(128);not null"`
+	Status       UserStatus `json:"status,omitempty" gorm:"type:varchar(20);not null"`
 
 	Permission Permission `json:"permission" gorm:"foreignKey:PermissionID;references:ID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE"`
 }
