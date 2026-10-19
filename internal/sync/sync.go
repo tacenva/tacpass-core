@@ -3,6 +3,7 @@ package sync
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -306,4 +307,66 @@ func (s *Service) SetSyncStateToBeLastest(
 		}).
 		FirstOrCreate(&state).
 		Error
+}
+
+func MergePendingChanges[T any](
+	baseChanges []SyncChange,
+	compChanges []SyncChange,
+	baseData map[string]T,
+	compData map[string]T,
+) ([]SyncChange, map[string]T) {
+	mergedChanges := make(map[string]SyncChange)
+	mergedData := make(map[string]T)
+
+	for _, change := range baseChanges {
+		entityID := change.EntityID
+		existing, exists := mergedChanges[entityID]
+
+		if exists && (existing.Operation == OperationDelete ||
+			(existing.Operation == OperationCreate &&
+				change.Operation == OperationUpdate)) {
+			continue
+		}
+
+		if !exists {
+			mergedChanges[entityID] = change
+			mergedData[entityID] = baseData[entityID]
+		} else if change.Operation == OperationDelete {
+			mergedChanges[entityID] = change
+			delete(mergedData, entityID)
+		} else if change.ID > existing.ID {
+			mergedChanges[entityID] = change
+		}
+	}
+
+	for _, change := range compChanges {
+		entityID := change.EntityID
+		existing, exists := mergedChanges[entityID]
+
+		if !exists {
+			continue
+		}
+
+		if existing.Operation == OperationDelete {
+			continue
+		}
+
+		if change.Operation == OperationDelete {
+			delete(mergedChanges, entityID)
+			delete(mergedData, entityID)
+		} else if change.ID > existing.ID {
+			mergedData[entityID] = compData[entityID]
+		}
+	}
+
+	sortedChanges := make([]SyncChange, 0, len(mergedChanges))
+	for _, change := range mergedChanges {
+		sortedChanges = append(sortedChanges, change)
+	}
+
+	sort.Slice(sortedChanges, func(i, j int) bool {
+		return sortedChanges[i].ID < sortedChanges[j].ID
+	})
+
+	return sortedChanges, mergedData
 }

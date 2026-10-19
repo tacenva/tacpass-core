@@ -5,16 +5,19 @@ import (
 	"github.com/tacenva/tacpass-core/internal/sync"
 )
 
-type PendingVaultChange struct {
-	SyncChange      sync.SyncChange      `json:"sync_change"`
-	Vault           *entity.Vault        `json:"vault,omitempty"`
+type VaultChangeData struct {
+	Vault           entity.Vault         `json:"vault,omitempty"`
 	VaultAccessList []entity.VaultAccess `json:"vault_accesses,omitempty"`
 }
 
+type PendingVaultChange struct {
+	SyncChanges         []sync.SyncChange          `json:"sync_changes"`
+	VaultChangeDataList map[string]VaultChangeData `json:"vault_change_data_list,omitempty"`
+}
+
 type PendingVaultRecordChange struct {
-	SyncChange sync.SyncChange `json:"sync_change"`
-	RecordID   string          `json:"recordID,omitempty"`
-	Record     []byte          `json:"record,omitempty"`
+	SyncChanges      []sync.SyncChange `json:"sync_changes"`
+	EncryptedRecords map[string][]byte `json:"encrypted_records,omitempty"`
 }
 
 type PendingTotalChanges struct {

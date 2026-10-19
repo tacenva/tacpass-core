@@ -116,10 +116,6 @@ func (r *repository) FindByVaultID(
 	var values []entity.VaultAccess
 
 	err := r.db.
-		// Select("id", "vault_id", "vault_key").
-		// Preload("Permission.Users").
-		// Preload("Vault").
-		// Where("vault_id = ?", vaultID).
 		Where("vault_id = ? AND permission_id = ?", vaultID, permissionID).
 		Find(&values).
 		Error

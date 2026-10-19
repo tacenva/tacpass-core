@@ -1,12 +1,9 @@
 package vaultrecord
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/tacenva/database"
@@ -283,7 +280,7 @@ func (s *Service) GetChangesAfter(
 	sotID string,
 	startID string,
 	limit int,
-) ([]contract.PendingVaultRecordChange, error) {
+) (*contract.PendingVaultRecordChange, error) {
 	if vaultID == "" {
 		return nil, ErrVaultIDEmpty
 	}
@@ -307,44 +304,36 @@ func (s *Service) GetChangesAfter(
 		return nil, err
 	}
 
-	result := make(
-		[]contract.PendingVaultRecordChange,
-		0,
-		len(changes),
-	)
+	encryptedRecords := make(map[string][]byte, len(changes))
 
 	for _, change := range changes {
-		item := contract.PendingVaultRecordChange{
-			SyncChange: change,
-		}
-
-		if change.Operation == sync.OperationDelete {
-			result = append(result, item)
-			continue
-		}
-
-		if change.EntityID == "" {
+		recordID := change.EntityID
+		if recordID == "" {
 			return nil, fmt.Errorf(
 				"pending change %s has empty entity_id",
 				change.ID,
 			)
 		}
 
-		record, err := fileDB.FindRaw(
-			change.EntityID,
-		)
-		if err != nil {
-			if !errors.Is(err, database.ErrRecordNotFound) {
-				return nil, err
-			}
+		if _, exists := encryptedRecords[recordID]; exists {
+			continue
 		}
 
-		item.Record = record
+		encryptedRecord, err := fileDB.FindRaw(recordID)
+		if err != nil {
+			if errors.Is(err, database.ErrRecordNotFound) {
+				continue
+			}
+			return nil, err
+		}
 
-		result = append(result, item)
+		encryptedRecords[recordID] = encryptedRecord
 	}
 
-	return result, nil
+	return &contract.PendingVaultRecordChange{
+		SyncChanges:      changes,
+		EncryptedRecords: encryptedRecords,
+	}, nil
 }
 
 func (s *Service) GetChangeCount(
@@ -411,62 +400,44 @@ func (s *Service) List(
 	return records, nil
 }
 
-func (s *Service) mergePendingVaultRecordChange(
-	base []contract.PendingVaultRecordChange,
-	comp []contract.PendingVaultRecordChange,
-) []contract.PendingVaultRecordChange {
-	clonedBase := slices.Clone(base)
-	merged := make(map[string]contract.PendingVaultRecordChange)
-
-	for _, change := range clonedBase {
-		recordID := change.SyncChange.EntityID
-		existing, exists := merged[recordID]
-
-		if exists && (existing.SyncChange.Operation == sync.OperationDelete ||
-			(existing.SyncChange.Operation == sync.OperationCreate &&
-				change.SyncChange.Operation == sync.OperationUpdate)) {
-			continue
-		}
-
-		if !exists || change.SyncChange.ID > existing.SyncChange.ID {
-			merged[recordID] = change
-		}
+func (s *Service) MergePendingVaultRecordChange(
+	base *contract.PendingVaultRecordChange,
+	comp *contract.PendingVaultRecordChange,
+) *contract.PendingVaultRecordChange {
+	if base == nil {
+		return nil
 	}
 
-	for _, change := range comp {
-		recordID := change.SyncChange.EntityID
-		existing, exists := merged[recordID]
+	var compChanges []sync.SyncChange
+	var compData map[string][]byte
 
-		if !exists {
-			continue
-		}
-
-		if existing.SyncChange.Operation == sync.OperationDelete {
-			continue
-		}
-
-		if change.SyncChange.ID > existing.SyncChange.ID {
-			merged[recordID] = change
-		}
+	if comp != nil {
+		compChanges = comp.SyncChanges
+		compData = comp.EncryptedRecords
 	}
 
-	result := make([]contract.PendingVaultRecordChange, 0, len(merged))
-	for _, change := range merged {
-		result = append(result, change)
+	changes, data := sync.MergePendingChanges(
+		base.SyncChanges,
+		compChanges,
+		base.EncryptedRecords,
+		compData,
+	)
+
+	return &contract.PendingVaultRecordChange{
+		SyncChanges:      changes,
+		EncryptedRecords: data,
 	}
-
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].SyncChange.ID < result[j].SyncChange.ID
-	})
-
-	return result
 }
 
 func (s *Service) applyChange(
 	vaultDir string,
 	vaultID string,
-	recordChanges []contract.PendingVaultRecordChange,
+	recordChange *contract.PendingVaultRecordChange,
 ) error {
+	if recordChange == nil {
+		return nil
+	}
+
 	db := database.New(vaultDir)
 
 	fileDB, err := db.NewRawFile(vaultID)
@@ -474,23 +445,18 @@ func (s *Service) applyChange(
 		return err
 	}
 
-	for _, change := range recordChanges {
-		changeJSON, err := json.MarshalIndent(change, "", "  ")
-		if err != nil {
-			log.Printf("[DEBUG] Gagal marshal change: %v", err)
-		} else {
-			log.Printf("[DEBUG] applyChange change:\n%s", string(changeJSON))
-		}
-		recordID := change.SyncChange.EntityID
-		switch change.SyncChange.Operation {
+	for _, change := range recordChange.SyncChanges {
+		recordID := change.EntityID
+		encryptedRecord := recordChange.EncryptedRecords[recordID]
+		switch change.Operation {
 		case sync.OperationCreate:
-			err := fileDB.InsertRaw(&recordID, change.Record)
+			err := fileDB.InsertRaw(&recordID, encryptedRecord)
 			if err != nil {
 				return err
 			}
 
 		case sync.OperationUpdate:
-			err := fileDB.UpdateRaw(recordID, change.Record)
+			err := fileDB.UpdateRaw(recordID, encryptedRecord)
 			if err != nil {
 				if !errors.Is(err, database.ErrRecordNotFound) {
 					return err
@@ -513,24 +479,24 @@ func (s *Service) applyChange(
 func (s *Service) insertSyncChanges(
 	sotID string,
 	vaultID string,
-	recordChanges []contract.PendingVaultRecordChange,
+	syncChanges []sync.SyncChange,
 ) error {
-	if len(recordChanges) == 0 {
+	if len(syncChanges) == 0 {
 		return nil
 	}
 
-	syncChanges := make([]sync.SyncChange, len(recordChanges))
+	clonedSyncChanges := slices.Clone(syncChanges)
 
-	for i, change := range recordChanges {
-		syncChanges[i] = change.SyncChange
-		syncChanges[i].SotID = sotID
+	for i := range clonedSyncChanges {
+		clonedSyncChanges[i].SotID = sotID
 	}
 
 	entityName := s.getEntityName(vaultID)
+
 	return s.syncService.InsertSyncChanges(
 		sotID,
 		entityName,
-		syncChanges,
+		clonedSyncChanges,
 	)
 }
 
@@ -538,18 +504,22 @@ func (s *Service) Sync(
 	vaultDir string,
 	sotID string,
 	vaultID string,
-	changeBase []contract.PendingVaultRecordChange,
-	changeComp []contract.PendingVaultRecordChange,
+	changeBase *contract.PendingVaultRecordChange,
+	changeComp *contract.PendingVaultRecordChange,
 ) error {
-	appliedChanges := s.mergePendingVaultRecordChange(
+	appliedChanges := s.MergePendingVaultRecordChange(
 		changeBase,
 		changeComp,
 	)
+	if appliedChanges == nil {
+		return nil
+	}
+
 	if err := s.applyChange(vaultDir, vaultID, appliedChanges); err != nil {
 		return err
 	}
 
-	return s.insertSyncChanges(sotID, vaultID, changeBase)
+	return s.insertSyncChanges(sotID, vaultID, changeBase.SyncChanges)
 }
 
 func (s *Service) SetSyncStateToBeLastest(

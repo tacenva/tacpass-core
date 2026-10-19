@@ -1,11 +1,8 @@
 package vault
 
 import (
-	"encoding/json"
 	"errors"
-	"log"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/oklog/ulid/v2"
@@ -264,9 +261,6 @@ func (s *Service) findVAOnReplica(
 			return false
 		}
 
-		// vaultDataJSON, _ := json.MarshalIndent(vaultData, "", "  ")
-		// log.Printf("[DEBUG] vaultData:\n%s", string(vaultDataJSON))
-
 		return vaultID == id
 	})
 	return &vaData, err
@@ -382,7 +376,6 @@ func (s *Service) DeleteOnReplica(
 	}
 
 	vaData, err := s.findVAOnReplica(id, dbFile)
-	// log.Printf("[DEBUG] vaData: %+v, err: %v", vaData, err)
 	if err != nil {
 		return err
 	}
@@ -429,7 +422,7 @@ func (s *Service) GetChangesAfterOnSoT(
 	sotID string,
 	startID string,
 	limit int,
-) ([]contract.PendingVaultChange, error) {
+) (*contract.PendingVaultChange, error) {
 	if authUser == nil || authUser.ID == "" {
 		return nil, ErrPermission
 	}
@@ -444,67 +437,48 @@ func (s *Service) GetChangesAfterOnSoT(
 		return nil, err
 	}
 
-	result := make(
-		[]contract.PendingVaultChange,
-		0,
-		len(changes),
-	)
-
+	vaultChangeDataList := make(map[string]contract.VaultChangeData)
 	for _, change := range changes {
-		item := contract.PendingVaultChange{
-			SyncChange: change,
+		existing, exist := vaultChangeDataList[change.EntityID]
+		if exist {
+			continue
 		}
 
-		vault, err := s.repository.FindByID(
-			change.EntityID,
-		)
+		vault, err := s.repository.FindByID(change.EntityID)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				vault = &entity.Vault{
-					ID: change.EntityID,
-				}
-				err = nil
+				continue
 			} else {
 				return nil, err
 			}
 		}
 
-		item.Vault = vault
-		if change.Operation != sync.OperationDelete {
-			vaultAccessList, err := s.vaultaccessService.FindByVaultID(
-				change.EntityID,
-				authUser.PermissionID,
-			)
-			log.Printf("VaultID : %s", change.EntityID)
-			data, _ := json.MarshalIndent(vaultAccessList, "", "  ")
-			log.Printf("[DEBUG] FindByVaultID result:\n%s", string(data))
-
-			if err != nil {
-				return nil, err
-			}
-
-			item.VaultAccessList = vaultAccessList
-
-			// for _, vaData := range vaultAccessList {
-			// 	if vaData.PermissionID != authUser.PermissionID {
-			// 		continue
-			// 	}
-
-			// 	item.VaultAccessList = append(item.VaultAccessList, entity.VaultAccess{
-			// 		ID:           vaData.ID,
-			// 		VaultID:      vaData.VaultID,
-			// 		PermissionID: vaData.PermissionID,
-			// 		VaultKey:     vaData.VaultKey,
-			// 	})
-
-			// 	break
-			// }
-		}
-
-		result = append(result, item)
+		existing.Vault = *vault
+		vaultChangeDataList[change.EntityID] = existing
 	}
 
-	return result, nil
+	for vaultID := range vaultChangeDataList {
+		existing := vaultChangeDataList[vaultID]
+		if len(existing.VaultAccessList) > 0 {
+			continue
+		}
+
+		vaFromVault, err := s.vaultaccessService.FindByVaultID(
+			vaultID,
+			authUser.PermissionID,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		existing.VaultAccessList = vaFromVault
+		vaultChangeDataList[vaultID] = existing
+	}
+
+	return &contract.PendingVaultChange{
+		SyncChanges:         changes,
+		VaultChangeDataList: vaultChangeDataList,
+	}, nil
 }
 
 func (s *Service) GetChangesAfterOnReplica(
@@ -512,12 +486,7 @@ func (s *Service) GetChangesAfterOnReplica(
 	startID string,
 	limit int,
 	dbFile *database.DatabaseFile,
-) ([]contract.PendingVaultChange, error) {
-	// log.Printf(
-	// 	"[DEBUG] GetChangesAfterOnReplica START: sotID=%s startID=%s limit=%d",
-	// 	sotID, startID, limit,
-	// )
-
+) (*contract.PendingVaultChange, error) {
 	changes, err := s.syncService.GetChangesAfter(
 		sotID,
 		syncEntityVault,
@@ -525,38 +494,12 @@ func (s *Service) GetChangesAfterOnReplica(
 		limit,
 	)
 	if err != nil {
-		// log.Printf("[DEBUG] GetChangesAfter failed: %v", err)
 		return nil, err
 	}
 
-	// changesJSON, err := json.MarshalIndent(changes, "", "  ")
-	// if err != nil {
-	// 	log.Printf("[DEBUG] Failed to marshal changes: %v", err)
-	// } else {
-	// 	log.Printf(
-	// 		"[DEBUG] GetChangesAfter returned %d changes:\n%s",
-	// 		len(changes),
-	// 		string(changesJSON),
-	// 	)
-	// }
-
-	result := make([]contract.PendingVaultChange, 0, len(changes))
+	vaultChangeDataList := make(map[string]contract.VaultChangeData)
 
 	for _, change := range changes {
-		// log.Printf(
-		// 	"[DEBUG] Processing change[%d]: ID=%s SotID=%s Entity=%s EntityID=%s Operation=%s",
-		// 	i,
-		// 	change.ID,
-		// 	change.SotID,
-		// 	change.Entity,
-		// 	change.EntityID,
-		// 	change.Operation,
-		// )
-
-		item := contract.PendingVaultChange{
-			SyncChange: change,
-		}
-
 		if change.Operation != sync.OperationDelete {
 			var vaFound entity.VaultAccess
 
@@ -569,55 +512,34 @@ func (s *Service) GetChangesAfterOnReplica(
 			)
 
 			if err != nil {
-				if err != database.ErrRecordNotFound {
-					return nil, err
+				if errors.Is(err, database.ErrRecordNotFound) {
+					continue
 				}
-
-				// log.Printf(
-				// 	"[DEBUG] VaultAccess not found, appending change without VaultAccess: changeID=%s vaultID=%s",
-				// 	change.ID,
-				// 	change.EntityID,
-				// )
-			} else {
-				item.VaultAccessList = append(item.VaultAccessList,
-					entity.VaultAccess{
-						ID:       vaFound.ID,
-						VaultID:  vaFound.VaultID,
-						VaultKey: vaFound.VaultKey,
-					},
-				)
-
-				item.Vault = &vaFound.Vault
+				return nil, err
 			}
-		}
 
-		// Tetap append meskipun VaultAccess tidak ditemukan.
-		result = append(result, item)
-		// log.Printf(
-		// 	"[DEBUG] Item appended: changeID=%s resultCount=%d",
-		// 	change.ID,
-		// 	len(result),
-		// )
+			existing, exist := vaultChangeDataList[vaFound.VaultID]
+			if exist {
+				continue
+			}
+
+			existing.Vault = vaFound.Vault
+
+			vaFound.Vault = entity.Vault{}
+
+			existing.VaultAccessList = append(
+				existing.VaultAccessList,
+				vaFound,
+			)
+
+			vaultChangeDataList[vaFound.VaultID] = existing
+		}
 	}
 
-	// resultJSON, err := json.MarshalIndent(result, "", "  ")
-	// if err != nil {
-	// 	log.Printf("[DEBUG] Failed to marshal final result: %v", err)
-	// } else {
-	// 	log.Printf(
-	// 		"[DEBUG] GetChangesAfterOnReplica RESULT (%d items):\n%s",
-	// 		len(result),
-	// 		string(resultJSON),
-	// 	)
-	// }
-
-	// log.Printf(
-	// 	"[DEBUG] GetChangesAfterOnReplica END: inputChanges=%d resultItems=%d",
-	// 	len(changes),
-	// 	len(result),
-	// )
-
-	return result, nil
+	return &contract.PendingVaultChange{
+		SyncChanges:         changes,
+		VaultChangeDataList: vaultChangeDataList,
+	}, nil
 }
 
 func (s *Service) GetChangeCount(
@@ -631,96 +553,76 @@ func (s *Service) GetChangeCount(
 	)
 }
 
-func (s *Service) mergePendingVaultChange(
-	base []contract.PendingVaultChange,
-	comp []contract.PendingVaultChange,
-) []contract.PendingVaultChange {
-	clonedBase := slices.Clone(base)
-	merged := make(map[string]contract.PendingVaultChange)
-
-	for _, change := range clonedBase {
-		vaultID := change.SyncChange.EntityID
-		existing, exists := merged[vaultID]
-
-		if exists && (existing.SyncChange.Operation == sync.OperationDelete ||
-			(existing.SyncChange.Operation == sync.OperationCreate &&
-				change.SyncChange.Operation == sync.OperationUpdate)) {
-			continue
-		}
-
-		if !exists || change.SyncChange.ID > existing.SyncChange.ID {
-			merged[vaultID] = change
-		}
+func (s *Service) MergePendingVaultChange(
+	base *contract.PendingVaultChange,
+	comp *contract.PendingVaultChange,
+) *contract.PendingVaultChange {
+	if base == nil {
+		return nil
 	}
 
-	for _, change := range comp {
-		if change.Vault == nil {
-			continue
-		}
+	var compChanges []sync.SyncChange
+	var compData map[string]contract.VaultChangeData
 
-		vaultID := change.SyncChange.EntityID
-		existing, exists := merged[vaultID]
-
-		if !exists {
-			continue
-		}
-
-		if existing.SyncChange.Operation == sync.OperationDelete {
-			continue
-		}
-
-		if change.SyncChange.ID > existing.SyncChange.ID {
-			merged[vaultID] = change
-		}
+	if comp != nil {
+		compChanges = comp.SyncChanges
+		compData = comp.VaultChangeDataList
 	}
 
-	result := make([]contract.PendingVaultChange, 0, len(merged))
-	for _, change := range merged {
-		result = append(result, change)
+	changes, data := sync.MergePendingChanges(
+		base.SyncChanges,
+		compChanges,
+		base.VaultChangeDataList,
+		compData,
+	)
+
+	return &contract.PendingVaultChange{
+		SyncChanges:         changes,
+		VaultChangeDataList: data,
 	}
-
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].SyncChange.ID < result[j].SyncChange.ID
-	})
-
-	return result
 }
 
 func (s *Service) applyChangeOnSoT(
-	vaultChanges []contract.PendingVaultChange,
+	vaultChange *contract.PendingVaultChange,
 ) error {
+	if vaultChange == nil {
+		return nil
+	}
+
 	err := s.repository.Transaction(func(tx *gorm.DB) error {
-		for _, change := range vaultChanges {
-			vault := change.Vault
-			switch change.SyncChange.Operation {
+		for _, change := range vaultChange.SyncChanges {
+			vaultID := change.EntityID
+			vaultChangeData, exist := vaultChange.VaultChangeDataList[vaultID]
+
+			switch change.Operation {
 			case sync.OperationCreate:
-				if vault == nil {
+				if !exist {
 					continue
 				}
 
-				if err := s.repository.Create(tx, vault); err != nil {
+				if err := s.repository.Create(tx, &vaultChangeData.Vault); err != nil {
 					return err
 				}
 
-				if err := s.vaultaccessService.CreateOrUpdateBulkTx(tx, change.VaultAccessList); err != nil {
+				if err := s.vaultaccessService.CreateOrUpdateBulkTx(tx, vaultChangeData.VaultAccessList); err != nil {
 					return err
 				}
 
 			case sync.OperationUpdate:
-				if vault == nil {
+				if !exist {
 					continue
 				}
 
-				if err := s.repository.FirstOrCreate(tx, vault); err != nil {
+				if err := s.repository.FirstOrCreate(tx, &vaultChangeData.Vault); err != nil {
 					return err
 				}
 
-				if err := s.vaultaccessService.CreateOrUpdateBulkTx(tx, change.VaultAccessList); err != nil {
+				if err := s.vaultaccessService.CreateOrUpdateBulkTx(tx, vaultChangeData.VaultAccessList); err != nil {
 					return err
 				}
 
 			case sync.OperationDelete:
-				if err := s.repository.Delete(tx, change.SyncChange.EntityID); err != nil {
+				if err := s.repository.Delete(tx, vaultID); err != nil {
 					return err
 				}
 			}
@@ -729,32 +631,27 @@ func (s *Service) applyChangeOnSoT(
 		return nil
 	})
 
-	// if err != nil {
-	// 	log.Printf("[ERROR] applyChangeOnSoT failed: %v", err)
-	// }
-
 	return err
 }
 
 func (s *Service) ApplyChangeOnReplica(
-	vaultChanges []contract.PendingVaultChange,
+	vaultChange *contract.PendingVaultChange,
 	dbFile *database.DatabaseFile,
 ) error {
-	for _, change := range vaultChanges {
-		// changeJSON, err := json.MarshalIndent(change, "", "  ")
-		// if err != nil {
-		// 	log.Printf("[DEBUG] Gagal marshal change: %v", err)
-		// } else {
-		// 	log.Printf("[DEBUG] ApplyChangeOnReplica change:\n%s", string(changeJSON))
-		// }
+	if vaultChange == nil {
+		return nil
+	}
 
+	for _, change := range vaultChange.SyncChanges {
+		vaultID := change.EntityID
+		vaultChangeData := vaultChange.VaultChangeDataList[vaultID]
 		var vaData entity.VaultAccess
-		if len(change.VaultAccessList) > 0 {
-			vaData = change.VaultAccessList[0]
+		if len(vaultChangeData.VaultAccessList) > 0 {
+			vaData = vaultChangeData.VaultAccessList[0]
+			vaData.Vault = vaultChangeData.Vault
 		}
-		vaData.Vault = *change.Vault
 
-		switch change.SyncChange.Operation {
+		switch change.Operation {
 		case sync.OperationCreate:
 			_, err := dbFile.Insert(&vaData)
 			if err != nil {
@@ -764,7 +661,7 @@ func (s *Service) ApplyChangeOnReplica(
 		case sync.OperationUpdate:
 			err := dbFile.Update(&vaData)
 			if err != nil {
-				if err == database.ErrRecordNotFound {
+				if errors.Is(err, database.ErrRecordNotFound) {
 					continue
 				}
 				return err
@@ -772,11 +669,11 @@ func (s *Service) ApplyChangeOnReplica(
 
 		case sync.OperationDelete:
 			foundVa, err := s.findVAOnReplica(
-				change.Vault.ID,
+				vaultID,
 				dbFile,
 			)
 			if err != nil {
-				if err == database.ErrRecordNotFound {
+				if errors.Is(err, database.ErrRecordNotFound) {
 					continue
 				}
 				return err
@@ -793,50 +690,57 @@ func (s *Service) ApplyChangeOnReplica(
 
 func (s *Service) insertSyncChanges(
 	sotID string,
-	vaultChanges []contract.PendingVaultChange,
+	syncChanges []sync.SyncChange,
 ) error {
-	if len(vaultChanges) == 0 {
+	if len(syncChanges) == 0 {
 		return nil
 	}
 
-	syncChanges := make([]sync.SyncChange, len(vaultChanges))
+	clonedSyncChanges := slices.Clone(syncChanges)
 
-	for i, change := range vaultChanges {
-		syncChanges[i] = change.SyncChange
-		syncChanges[i].SotID = sotID
+	for changeIndex := range clonedSyncChanges {
+		clonedSyncChanges[changeIndex].SotID = sotID
 	}
 
 	return s.syncService.InsertSyncChanges(
 		sotID,
 		syncEntityVault,
-		syncChanges,
+		clonedSyncChanges,
 	)
 }
 
 func (s *Service) SyncOnReplica(
 	sotID string,
-	replicaChanges []contract.PendingVaultChange,
-	sotChanges []contract.PendingVaultChange,
+	replicaChanges *contract.PendingVaultChange,
+	sotChanges *contract.PendingVaultChange,
 	dbFile *database.DatabaseFile,
 ) error {
-	changes := s.mergePendingVaultChange(sotChanges, replicaChanges)
-	if err := s.ApplyChangeOnReplica(changes, dbFile); err != nil {
+	appliedChanges := s.MergePendingVaultChange(sotChanges, replicaChanges)
+	if appliedChanges == nil {
+		return nil
+	}
+
+	if err := s.ApplyChangeOnReplica(appliedChanges, dbFile); err != nil {
 		return err
 	}
 
-	return s.insertSyncChanges(sotID, sotChanges)
+	return s.insertSyncChanges(sotID, sotChanges.SyncChanges)
 }
 
 func (s *Service) SyncOnSoT(
 	sotID string,
-	changes []contract.PendingVaultChange,
+	changes *contract.PendingVaultChange,
 ) error {
-	appliedChanges := s.mergePendingVaultChange(changes, nil)
+	appliedChanges := s.MergePendingVaultChange(changes, nil)
+	if appliedChanges == nil {
+		return nil
+	}
+
 	if err := s.applyChangeOnSoT(appliedChanges); err != nil {
 		return err
 	}
 
-	return s.insertSyncChanges(sotID, changes)
+	return s.insertSyncChanges(sotID, changes.SyncChanges)
 }
 
 func (s *Service) SetSyncStateToBeLastest(
