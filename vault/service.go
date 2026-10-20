@@ -75,7 +75,7 @@ func (s *Service) VaultAccessList(
 func (s *Service) ConnectedPublicKeys(
 	authUser *entity.User,
 ) ([]entity.Permission, error) {
-	return s.permissionService.ConnectedPublicKeys(authUser)
+	return s.permissionService.ConnectedPublicKeys(authUser.Permission.PublicKey)
 }
 
 func (s *Service) CreateOnSoT(

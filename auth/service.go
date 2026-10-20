@@ -33,6 +33,10 @@ func (s *Service) Enroll(
 		return "", "", err
 	}
 
+	if userStatus == entity.UserStatusPending && permission.AutoApprove {
+		userStatus = entity.UserStatusApproved
+	}
+
 	_, token, err := s.userService.Create(userHostname, permission.ID, userStatus)
 	if err != nil {
 		return "", "", err

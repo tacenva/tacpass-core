@@ -8,17 +8,17 @@ import (
 )
 
 type VaultRecord struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Endpoint  string    `json:"endpoint"`
-	Password  string    `json:"password"`
-	ExpiredAt time.Time `json:"expired_at"`
+	ID        string    `json:"id,omitempty"`
+	Name      string    `json:"name,omitempty"`
+	Endpoint  string    `json:"endpoint,omitempty"`
+	Password  string    `json:"password,omitempty"`
+	ExpiredAt time.Time `json:"expired_at,omitempty"`
 }
 
 type Vault struct {
-	ID        string    `json:"id" gorm:"type:varchar(26);primaryKey"`
-	Name      string    `json:"name" gorm:"type:varchar(255);not null"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        string    `json:"id,omitempty" gorm:"type:varchar(26);primaryKey"`
+	Name      string    `json:"name,omitempty" gorm:"type:varchar(255);not null"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
 }
 
 func (p *Vault) BeforeCreate(tx *gorm.DB) error {

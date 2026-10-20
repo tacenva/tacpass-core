@@ -55,25 +55,18 @@ func (s *Service) List(
 		return nil, ErrPermission
 	}
 
-	return s.permissionService.ListWithoutRevokedUsers()
+	return s.permissionService.List()
 }
 
 func (s *Service) Create(
 	authUser *entity.User,
 	name string,
 	privilege entity.Privilege,
-	group string,
+	group *entity.PermissionGroup,
+	autoApprove bool,
 ) ([]entity.VaultAccess, *entity.Permission, *keyring.KeyPair, error) {
 	if !authUser.HasAdminPermission() {
 		return nil, nil, nil, ErrPermission
-	}
-
-	if privilege == entity.PrivilegeAdmin {
-		group = ""
-	}
-
-	if group == "" && privilege != entity.PrivilegeAdmin {
-		return nil, nil, nil, errors.ErrUnsupported
 	}
 
 	vaultAccessList, err := s.vaultService.VaultAccessList(authUser)
@@ -81,7 +74,7 @@ func (s *Service) Create(
 		return nil, nil, nil, err
 	}
 
-	permissionData, keyPair, err := s.permissionService.Create(name, privilege, group)
+	permissionData, keyPair, err := s.permissionService.Create(name, privilege, group, autoApprove)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -89,55 +82,31 @@ func (s *Service) Create(
 	return vaultAccessList, permissionData, keyPair, err
 }
 
-func (s *Service) ChangeGroup(
+func (s *Service) Update(
 	authUser *entity.User,
-	id string,
-	group string,
+	permission *entity.Permission,
 ) error {
 	if !authUser.HasAdminPermission() {
 		return ErrPermission
 	}
 
-	return s.permissionService.ChangeGroup(id, group)
+	return s.permissionService.Update(permission)
 }
 
-func (s *Service) ChangeName(
+func (s *Service) SetRevoked(
 	authUser *entity.User,
 	id string,
-	name string,
+	revoked bool,
 ) error {
 	if !authUser.HasAdminPermission() {
 		return ErrPermission
 	}
 
-	return s.permissionService.ChangeName(id, name)
-}
-
-func (s *Service) ChangePrivilege(
-	authUser *entity.User,
-	id string,
-	privilege entity.Privilege,
-) error {
-	if !authUser.HasAdminPermission() {
+	if id == authUser.PermissionID {
 		return ErrPermission
 	}
 
-	if authUser.PermissionID == id {
-		return ErrPermission
-	}
-
-	return s.permissionService.ChangePrivilege(id, privilege)
-}
-
-func (s *Service) Revoke(
-	authUser *entity.User,
-	id string,
-) error {
-	if !authUser.HasAdminPermission() {
-		return ErrPermission
-	}
-
-	return s.permissionService.Revoke(id)
+	return s.permissionService.SetRevoked(id, revoked)
 }
 
 func (s *Service) UserList(
@@ -217,7 +186,7 @@ func (s *Service) InitAdminPrivilege(name string) (*entity.Permission, *keyring.
 		return nil, nil, errors.New("admin was initialized")
 	}
 
-	return s.permissionService.Create(name, entity.PrivilegeAdmin, "")
+	return s.permissionService.Create(name, entity.PrivilegeAdmin, &entity.PermissionGroup{}, false)
 }
 
 func (s *Service) ListInternal() ([]entity.Permission, error) {
@@ -228,4 +197,36 @@ func (s *Service) GetInternal(
 	id string,
 ) (*entity.Permission, error) {
 	return s.permissionService.Get(id)
+}
+
+func (s *Service) GetGroups(
+	authUser *entity.User,
+) ([]entity.PermissionGroup, error) {
+	if !authUser.HasAdminPermission() {
+		return nil, ErrPermission
+	}
+
+	return s.permissionService.GetGroups()
+}
+
+func (s *Service) UpdateGroup(
+	authUser *entity.User,
+	group *entity.PermissionGroup,
+) error {
+	if !authUser.HasAdminPermission() {
+		return ErrPermission
+	}
+
+	return s.permissionService.UpdateGroup(group)
+}
+
+func (s *Service) DeleteGroup(
+	authUser *entity.User,
+	groupID string,
+) error {
+	if !authUser.HasAdminPermission() {
+		return ErrPermission
+	}
+
+	return s.permissionService.DeleteGroup(groupID)
 }

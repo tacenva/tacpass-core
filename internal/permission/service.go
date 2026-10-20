@@ -29,7 +29,8 @@ func NewService(repository *repository) *Service {
 func (s *Service) Create(
 	name string,
 	privilege entity.Privilege,
-	group string,
+	group *entity.PermissionGroup,
+	autoApprove bool,
 ) (*entity.Permission, *keyring.KeyPair, error) {
 	name = strings.TrimSpace(name)
 
@@ -47,11 +48,12 @@ func (s *Service) Create(
 	}
 
 	permission := &entity.Permission{
-		Name:      name,
-		Privilege: privilege,
-		Group:     group,
-		PublicKey: keyPair.PublicKey,
-		Revoked:   false,
+		Name:        name,
+		Privilege:   privilege,
+		Group:       *group,
+		PublicKey:   keyPair.PublicKey,
+		AutoApprove: autoApprove,
+		Revoked:     false,
 	}
 
 	if err := s.repository.Create(permission); err != nil {
@@ -120,105 +122,50 @@ func (s *Service) ListWithPendingUsers() ([]entity.Permission, error) {
 	return s.repository.FindAllByUserStatus(entity.UserStatusPending)
 }
 
-func (s *Service) ListWithoutRevokedUsers() ([]entity.Permission, error) {
-	return s.repository.FindAllWithoutRevokedUsers()
+func (s *Service) List() ([]entity.Permission, error) {
+	return s.repository.FindAll()
 }
 
-func (s *Service) ChangeGroup(id string, group string) error {
-	group = strings.TrimSpace(group)
-
-	if group == "" {
-		return ErrNameEmpty
-	}
-
-	permission, err := s.repository.Find(id)
-	if err != nil {
-		return err
-	}
-
-	if permission.Revoked {
-		return ErrRevoked
-	}
-
-	permission.Group = group
-	return s.repository.Update(permission)
-}
-
-func (s *Service) ChangeName(id string, name string) error {
-	name = strings.TrimSpace(name)
-
-	if name == "" {
-		return ErrNameEmpty
-	}
-
-	permission, err := s.repository.Find(id)
-	if err != nil {
-		return err
-	}
-
-	if permission.Revoked {
-		return ErrRevoked
-	}
-
-	permission.Name = name
-	return s.repository.Update(permission)
-}
-
-func (s *Service) ChangePrivilege(
-	id string,
-	privilege entity.Privilege,
-) error {
-	id = strings.TrimSpace(id)
-
-	if id == "" {
+func (s *Service) Update(updated *entity.Permission) error {
+	if updated == nil {
 		return ErrNotFound
 	}
 
-	if !privilege.IsValid() {
+	updated.ID = strings.TrimSpace(updated.ID)
+	updated.Name = strings.TrimSpace(updated.Name)
+
+	if updated.ID == "" {
+		return ErrNotFound
+	}
+
+	if updated.Name == "" {
+		return ErrNameEmpty
+	}
+
+	if !updated.Privilege.IsValid() {
 		return ErrPrivilegeInvalid
 	}
 
-	permission, err := s.repository.Find(id)
+	permission, err := s.repository.Find(updated.ID)
 	if err != nil {
 		return err
 	}
-
 	if permission == nil {
 		return ErrNotFound
 	}
 
-	if permission.Revoked {
-		return ErrRevoked
-	}
-
-	permission.Privilege = privilege
+	permission.Name = updated.Name
+	permission.Privilege = updated.Privilege
+	permission.AutoApprove = updated.AutoApprove
+	permission.Revoked = updated.Revoked
+	permission.Group = updated.Group
+	permission.GroupID = updated.GroupID
 
 	return s.repository.Update(permission)
 }
 
-func (s *Service) Revoke(id string) error {
-	id = strings.TrimSpace(id)
-
-	if id == "" {
-		return ErrNotFound
-	}
-
-	permission, err := s.repository.Find(id)
-	if err != nil {
-		return err
-	}
-
-	if permission == nil {
-		return ErrNotFound
-	}
-
-	if permission.Revoked {
-		return nil
-	}
-
-	permission.Revoked = true
-
-	return s.repository.Update(permission)
+func (s *Service) SetRevoked(id string, revoked bool) error {
+	return s.repository.SetRevoked(id, revoked)
 }
 
 func (s *Service) Delete(id string) error {
@@ -240,6 +187,22 @@ func (s *Service) Delete(id string) error {
 	return s.repository.Delete(id)
 }
 
-func (s *Service) ConnectedPublicKeys(authUser *entity.User) ([]entity.Permission, error) {
-	return s.repository.ConnectedPublicKeys(authUser)
+func (s *Service) ConnectedPublicKeys(publicKey string) ([]entity.Permission, error) {
+	permission, err := s.repository.FindByPublicKey(publicKey)
+	if err != nil {
+		return nil, err
+	}
+	return s.repository.ConnectedPublicKeys(*permission.GroupID)
+}
+
+func (s *Service) GetGroups() ([]entity.PermissionGroup, error) {
+	return s.repository.GetGroups()
+}
+
+func (s *Service) UpdateGroup(group *entity.PermissionGroup) error {
+	return s.repository.UpdateGroup(group)
+}
+
+func (s *Service) DeleteGroup(groupID string) error {
+	return s.repository.DeleteGroup(groupID)
 }

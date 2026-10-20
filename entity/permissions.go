@@ -13,16 +13,25 @@ const (
 	PrivilegeRead  Privilege = "read"
 )
 
-type Permission struct {
-	ID        string    `json:"id" gorm:"type:varchar(26);primaryKey"`
-	Name      string    `json:"name,omitempty" gorm:"type:varchar(100);not null;uniqueIndex"`
-	Privilege Privilege `json:"privilege,omitempty" gorm:"type:varchar(10);not null"`
-	Group     string    `json:"group,omitempty" gorm:"type:varchar(100);not null;default:'';index"`
-	PublicKey string    `json:"public_key,omitempty" gorm:"type:text;not null"`
-	Revoked   bool      `json:"revoked,omitempty" gorm:"not null;default:false"`
+type PermissionGroup struct {
+	ID   string `json:"id" gorm:"type:varchar(26);primaryKey"`
+	Name string `json:"name,omitempty" gorm:"type:varchar(100);not null;uniqueIndex"`
 
-	Users    []User        `json:"users,omitempty" gorm:"foreignKey:PermissionID;references:ID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE"`
-	Accesses []VaultAccess `json:"-" gorm:"foreignKey:PermissionID;references:ID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE"`
+	Permissions []Permission `json:"permissions,omitempty" gorm:"foreignKey:GroupID;references:ID"`
+}
+
+type Permission struct {
+	ID          string    `json:"id" gorm:"type:varchar(26);primaryKey"`
+	Name        string    `json:"name,omitempty" gorm:"type:varchar(100);not null;uniqueIndex"`
+	Privilege   Privilege `json:"privilege,omitempty" gorm:"type:varchar(10);not null"`
+	GroupID     *string   `json:"group_id" gorm:"type:varchar(26);index"`
+	PublicKey   string    `json:"public_key,omitempty" gorm:"type:text;not null"`
+	Revoked     bool      `json:"revoked" gorm:"not null;default:false"`
+	AutoApprove bool      `json:"auto_approve" gorm:"not null;default:false"`
+
+	Group    PermissionGroup `json:"group,omitempty" gorm:"foreignKey:GroupID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT"`
+	Users    []User          `json:"users,omitempty" gorm:"foreignKey:PermissionID;references:ID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE"`
+	Accesses []VaultAccess   `json:"-" gorm:"foreignKey:PermissionID;references:ID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE"`
 }
 
 func (p Privilege) IsValid() bool {
