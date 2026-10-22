@@ -111,12 +111,11 @@ func (r *repository) FindByPermissionID(
 
 func (r *repository) FindByVaultID(
 	vaultID string,
-	permissionID string,
 ) ([]entity.VaultAccess, error) {
 	var values []entity.VaultAccess
 
 	err := r.db.
-		Where("vault_id = ? AND permission_id = ?", vaultID, permissionID).
+		Where("vault_id = ?", vaultID).
 		Find(&values).
 		Error
 
@@ -185,4 +184,34 @@ func (r *repository) Delete(id string) error {
 	}
 
 	return nil
+}
+
+func (r *repository) DeleteBulkTx(
+	tx *gorm.DB,
+	vaultAccesses []*entity.VaultAccess,
+) error {
+	if len(vaultAccesses) == 0 {
+		return nil
+	}
+
+	return tx.Delete(vaultAccesses).Error
+}
+
+func (r *repository) DeleteBulkByGroupIDsTx(
+	tx *gorm.DB,
+	groupIDs []string,
+) error {
+	if len(groupIDs) == 0 {
+		return nil
+	}
+
+	permissionIDs := tx.
+		Model(&entity.Permission{}).
+		Select("id").
+		Where("group_id IN ?", groupIDs)
+
+	return tx.
+		Where("permission_id IN (?)", permissionIDs).
+		Delete(&entity.VaultAccess{}).
+		Error
 }

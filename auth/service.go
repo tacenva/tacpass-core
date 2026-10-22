@@ -3,6 +3,7 @@ package auth
 import (
 	"os"
 
+	"github.com/tacenva/tacpass-core/contract"
 	"github.com/tacenva/tacpass-core/entity"
 	"github.com/tacenva/tacpass-core/internal/permission"
 	"github.com/tacenva/tacpass-core/internal/user"
@@ -24,30 +25,46 @@ func NewService(
 }
 
 func (s *Service) Enroll(
-	userHostname string,
-	publicKey string,
+	enrollRequest *contract.EnrollRequest,
 	userStatus entity.UserStatus,
-) (string, string, error) {
-	permission, err := s.permissionService.GetByPublicKey(publicKey)
+) (*contract.EnrollResponse, error) {
+	permission, err := s.permissionService.GetByPublicKey(enrollRequest.PublicKey)
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
 
 	if userStatus == entity.UserStatusPending && permission.AutoApprove {
 		userStatus = entity.UserStatusApproved
 	}
 
-	_, token, err := s.userService.Create(userHostname, permission.ID, userStatus)
+	user, token, err := s.userService.Create(enrollRequest.Hostname, permission.ID, userStatus)
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
 
 	sotHostname, err := os.Hostname()
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
 
-	return sotHostname, token, nil
+	response := contract.EnrollResponse{
+		SoTHostname: sotHostname,
+		Status:      userStatus,
+		AuthToken:   token,
+	}
+
+	if userStatus == entity.UserStatusApproved {
+		groups, err := s.permissionService.GetGroupDescendants(user.Permission.GroupID)
+		if err != nil {
+			return nil, err
+		}
+		response.GroupAssignment = contract.GroupAssignment{
+			ID:    user.Permission.GroupID,
+			Items: groups,
+		}
+	}
+
+	return &response, nil
 }
 
 func (s *Service) GetUserData(token string) (*entity.User, error) {

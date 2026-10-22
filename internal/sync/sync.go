@@ -32,6 +32,7 @@ func (s *Service) RecordChangeWithoutTx(
 	entityID string,
 	operation SyncOperation,
 	sotID string,
+	changedBy string,
 ) error {
 	return s.Transaction(func(tx *gorm.DB) error {
 		return s.RecordChange(
@@ -41,6 +42,7 @@ func (s *Service) RecordChangeWithoutTx(
 			entityID,
 			operation,
 			sotID,
+			changedBy,
 		)
 	})
 }
@@ -52,6 +54,7 @@ func (s *Service) RecordChange(
 	entityID string,
 	operation SyncOperation,
 	sotID string,
+	changedBy string,
 ) error {
 	if entity == "" {
 		return fmt.Errorf("sync entity is required")
@@ -87,9 +90,10 @@ func (s *Service) RecordChange(
 		Entity:    entity,
 		EntityID:  entityID,
 		Operation: operation,
-		CreatedAt: now,
+		SotID:     sotID,
 
-		SotID: sotID,
+		CreatedAt: now,
+		ChangedBy: changedBy,
 	}
 
 	if err := tx.Create(&change).Error; err != nil {

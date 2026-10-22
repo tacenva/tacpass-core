@@ -196,9 +196,50 @@ func (s *Service) Delete(id string) error {
 	return s.repository.Delete(id)
 }
 
+func (s *Service) DeleteBulkTx(
+	tx *gorm.DB,
+	values []entity.VaultAccess,
+) error {
+	if tx == nil {
+		return errors.New("transaction is required")
+	}
+
+	if len(values) == 0 {
+		return nil
+	}
+
+	vaultAccesses := make([]*entity.VaultAccess, len(values))
+
+	for i := range values {
+		if err := validateVaultAccess(&values[i], false); err != nil {
+			return err
+		}
+
+		vaultAccesses[i] = &values[i]
+	}
+
+	if err := s.repository.DeleteBulkTx(
+		tx,
+		vaultAccesses,
+	); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *Service) DeleteBulkByGroupIDsTx(
+	tx *gorm.DB,
+	groupIDS []string,
+) error {
+	return s.repository.DeleteBulkByGroupIDsTx(
+		tx,
+		groupIDS,
+	)
+}
+
 func (s *Service) FindByVaultID(
 	vaultID string,
-	permissionID string,
 ) ([]entity.VaultAccess, error) {
 	vaultID = strings.TrimSpace(vaultID)
 
@@ -207,6 +248,21 @@ func (s *Service) FindByVaultID(
 	}
 
 	return s.repository.FindByVaultID(
+		vaultID,
+	)
+}
+
+func (s *Service) FindByVaultAndPermission(
+	vaultID string,
+	permissionID string,
+) (*entity.VaultAccess, error) {
+	vaultID = strings.TrimSpace(vaultID)
+
+	if vaultID == "" {
+		return nil, ErrVaultIDEmpty
+	}
+
+	return s.repository.FindByVaultAndPermission(
 		vaultID,
 		permissionID,
 	)

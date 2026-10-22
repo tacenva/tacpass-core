@@ -8,6 +8,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/tacenva/tacpass-core/entity"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type repository struct {
@@ -23,65 +24,123 @@ func NewRepository(db *gorm.DB) *repository {
 func (r *repository) findOrCreateGroup(
 	tx *gorm.DB,
 	permission *entity.Permission,
+	parentGroupID string,
 ) error {
-	if permission.Privilege == entity.PrivilegeAdmin {
-		permission.GroupID = nil
-		return nil
-	}
-
 	group := &permission.Group
 
-	// Jika ID tersedia, gunakan group yang sudah ada.
-	if group.ID != "" {
-		var existing entity.PermissionGroup
+	parentGroupID = strings.TrimSpace(parentGroupID)
+	group.Name = strings.TrimSpace(group.Name)
 
-		if err := tx.First(&existing, "id = ?", group.ID).Error; err != nil {
-			return err
-		}
-
-		group.ID = existing.ID
-		group.Name = existing.Name
-
-		groupID := existing.ID
-		permission.GroupID = &groupID
-
-		return nil
-	}
-
-	// Jika ID kosong, cari berdasarkan nama.
-	name := strings.TrimSpace(group.Name)
-	if name == "" {
+	// Validasi nama group.
+	if group.ID == "" && group.Name == "" {
 		return fmt.Errorf("permission group is required")
 	}
 
-	var existing entity.PermissionGroup
+	// Jika parent diberikan, pastikan parent memang ada.
+	var parent entity.PermissionGroup
+	if parentGroupID != "" {
+		if err := tx.First(&parent, "id = ?", parentGroupID).Error; err != nil {
+			return fmt.Errorf("find parent group: %w", err)
+		}
+	}
 
-	err := tx.Where("name = ?", name).First(&existing).Error
+	// Cari group berdasarkan ID jika sudah ditentukan.
+	if group.ID != "" {
+		query := tx.Where("id = ?", group.ID)
 
-	switch {
-	case err == nil:
-		group.ID = existing.ID
-		group.Name = existing.Name
+		if group.SotID != "" {
+			query = query.Where("sot_id = ?", group.SotID)
+		}
 
-	case errors.Is(err, gorm.ErrRecordNotFound):
-		group.ID = ulid.Make().String()
-		group.Name = name
-
-		if err := tx.Create(group).Error; err != nil {
+		var existing entity.PermissionGroup
+		if err := query.First(&existing).Error; err != nil {
 			return err
 		}
 
-	default:
+		*group = existing
+	} else {
+		// Cari group berdasarkan nama dalam SOT yang sama.
+		var existing entity.PermissionGroup
+
+		query := tx.Where("name = ?", group.Name)
+
+		if parentGroupID != "" {
+			query = query.Where("sot_id = ?", parent.SotID)
+		} else if group.SotID != "" {
+			query = query.Where("sot_id = ?", group.SotID)
+		}
+
+		err := query.First(&existing).Error
+
+		switch {
+		case err == nil:
+			*group = existing
+
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			group.ID = ulid.Make().String()
+
+			if parentGroupID != "" {
+				group.SotID = parent.SotID
+			}
+
+			if err := tx.Create(group).Error; err != nil {
+				return fmt.Errorf("create permission group: %w", err)
+			}
+
+		default:
+			return err
+		}
+	}
+
+	permission.GroupID = group.ID
+	permission.SotID = group.SotID
+
+	// Tidak perlu membuat relasi jika parent tidak ditentukan
+	// atau group itu sendiri adalah parent.
+	if parentGroupID == "" || group.ID == parentGroupID {
+		return nil
+	}
+
+	// Parent dan child harus berada dalam SOT yang sama.
+	if parent.SotID != group.SotID {
+		return fmt.Errorf("parent and child groups must belong to the same SOT")
+	}
+
+	// Cegah relasi duplikat.
+	var hierarchy entity.PermissionGroupHierarchy
+	err := tx.Where(
+		"sot_id = ? AND parent_group_id = ? AND child_group_id = ?",
+		group.SotID,
+		parent.ID,
+		group.ID,
+	).First(&hierarchy).Error
+
+	switch {
+	case err == nil:
+		return nil
+
+	case !errors.Is(err, gorm.ErrRecordNotFound):
 		return err
 	}
 
-	groupID := group.ID
-	permission.GroupID = &groupID
+	// Buat relasi parent -> child.
+	hierarchy = entity.PermissionGroupHierarchy{
+		SotID:         group.SotID,
+		ParentGroupID: parent.ID,
+		ChildGroupID:  group.ID,
+	}
+
+	if err := tx.Create(&hierarchy).Error; err != nil {
+		return fmt.Errorf("create group hierarchy: %w", err)
+	}
 
 	return nil
 }
 
-func (r *repository) Create(permission *entity.Permission) error {
+func (r *repository) Create(
+	permission *entity.Permission,
+	parentGroupID string,
+) error {
 	if permission == nil {
 		return fmt.Errorf("permission is required")
 	}
@@ -91,7 +150,7 @@ func (r *repository) Create(permission *entity.Permission) error {
 			permission.ID = ulid.Make().String()
 		}
 
-		if err := r.findOrCreateGroup(tx, permission); err != nil {
+		if err := r.findOrCreateGroup(tx, permission, parentGroupID); err != nil {
 			return err
 		}
 
@@ -99,7 +158,10 @@ func (r *repository) Create(permission *entity.Permission) error {
 	})
 }
 
-func (r *repository) Update(permission *entity.Permission) error {
+func (r *repository) Update(
+	permission *entity.Permission,
+	parentGroupID string,
+) error {
 	if permission == nil {
 		return fmt.Errorf("permission is required")
 	}
@@ -110,14 +172,13 @@ func (r *repository) Update(permission *entity.Permission) error {
 	}
 
 	return r.db.Transaction(func(tx *gorm.DB) error {
-		// Pastikan permission yang akan diperbarui memang ada.
 		var existing entity.Permission
 
 		if err := tx.First(&existing, "id = ?", permission.ID).Error; err != nil {
 			return err
 		}
 
-		if err := r.findOrCreateGroup(tx, permission); err != nil {
+		if err := r.findOrCreateGroup(tx, permission, parentGroupID); err != nil {
 			return err
 		}
 
@@ -127,6 +188,7 @@ func (r *repository) Update(permission *entity.Permission) error {
 			"public_key":   permission.PublicKey,
 			"auto_approve": permission.AutoApprove,
 			"group_id":     permission.GroupID,
+			"sot_id":       permission.SotID,
 		}
 
 		result := tx.Model(&entity.Permission{}).
@@ -167,25 +229,25 @@ func (r *repository) SetRevoked(id string, revoked bool) error {
 	return nil
 }
 
-func (r *repository) Find(id string) (*entity.Permission, error) {
-	var permission entity.Permission
+// func (r *repository) Find(id string) (*entity.Permission, error) {
+// 	var permission entity.Permission
 
-	err := r.db.
-		Preload("Users").
-		Where("id = ?", id).
-		First(&permission).
-		Error
+// 	err := r.db.
+// 		Preload("Users").
+// 		Where("id = ?", id).
+// 		First(&permission).
+// 		Error
 
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil
-	}
+// 	if errors.Is(err, gorm.ErrRecordNotFound) {
+// 		return nil, nil
+// 	}
 
-	if err != nil {
-		return nil, err
-	}
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	return &permission, nil
-}
+// 	return &permission, nil
+// }
 
 func (r *repository) FindAdmin() (*entity.Permission, error) {
 	var permission entity.Permission
@@ -255,7 +317,13 @@ func (r *repository) FindAllByUserStatus(
 	return permissions, nil
 }
 
-func (r *repository) FindAll() ([]entity.Permission, error) {
+func (r *repository) FindByGroupIDs(
+	groupIDs []string,
+) ([]entity.Permission, error) {
+	if len(groupIDs) == 0 {
+		return []entity.Permission{}, nil
+	}
+
 	var permissions []entity.Permission
 
 	err := r.db.
@@ -263,6 +331,7 @@ func (r *repository) FindAll() ([]entity.Permission, error) {
 			return tx.Order("id ASC")
 		}).
 		Preload("Group").
+		Where("group_id IN ?", groupIDs).
 		Order("id ASC").
 		Find(&permissions).
 		Error
@@ -296,16 +365,39 @@ func (r *repository) ListPublicKey() ([]entity.Permission, error) {
 	return permissions, nil
 }
 
-func (r *repository) ConnectedPublicKeys(
-	groupID string,
+// func (r *repository) ConnectedPublicKeys(
+// 	groupIDs []string,
+// ) ([]entity.Permission, error) {
+// 	if len(groupIDs) == 0 {
+// 		return []entity.Permission{}, nil
+// 	}
+
+// 	var permissions []entity.Permission
+
+// 	err := r.db.
+// 		Select("id", "public_key").
+// 		Where("group_id IN ?", groupIDs).
+// 		Order("id ASC").
+// 		Find(&permissions).
+// 		Error
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// 	return permissions, nil
+// }
+
+func (r *repository) GetPublicKeysByGroupIDs(
+	groupIDs []string,
+	sotID string,
 ) ([]entity.Permission, error) {
 	var permissions []entity.Permission
-	err := r.db.
-		Select("id", "public_key").
-		Where("group_id = ?", groupID).
-		Find(&permissions).
-		Error
 
+	err := r.db.
+		Model(&entity.Permission{}).
+		Select("id", "public_key").
+		Where("group_id IN ? AND sot_id = ?", groupIDs, sotID).
+		Find(&permissions).Error
 	if err != nil {
 		return nil, err
 	}
@@ -313,35 +405,82 @@ func (r *repository) ConnectedPublicKeys(
 	return permissions, nil
 }
 
-func (r *repository) GetGroups() ([]entity.PermissionGroup, error) {
+func (r *repository) GetGroupDescendants(
+	groupID string,
+) ([]entity.PermissionGroup, error) {
 	var groups []entity.PermissionGroup
 
-	err := r.db.Transaction(func(tx *gorm.DB) error {
-		// Hapus group yang tidak digunakan permission mana pun.
-		if err := tx.
-			Where(`
-				NOT EXISTS (
-					SELECT 1
-					FROM permissions
-					WHERE permissions.group_id = permission_groups.id
-				)
-			`).
-			Delete(&entity.PermissionGroup{}).
-			Error; err != nil {
-			return err
-		}
+	groupID = strings.TrimSpace(groupID)
+	if groupID == "" {
+		return nil, fmt.Errorf("group ID is required")
+	}
 
-		return tx.
-			Order("id ASC").
-			Find(&groups).
-			Error
-	})
+	err := r.db.Raw(`
+		WITH RECURSIVE group_tree AS (
+			SELECT pg.id, pg.sot_id, pg.name
+			FROM permission_groups pg
+			WHERE pg.id = ?
+
+			UNION
+
+			SELECT child.id, child.sot_id, child.name
+			FROM permission_groups child
+			INNER JOIN permission_group_hierarchies h
+				ON h.child_group_id = child.id
+				AND h.sot_id = child.sot_id
+			INNER JOIN group_tree parent
+				ON h.parent_group_id = parent.id
+				AND h.sot_id = parent.sot_id
+		)
+		SELECT pg.*
+		FROM permission_groups pg
+		INNER JOIN group_tree tree
+			ON tree.id = pg.id
+			AND tree.sot_id = pg.sot_id
+		ORDER BY pg.id ASC
+	`, groupID).Scan(&groups).Error
 
 	if err != nil {
 		return nil, err
 	}
 
 	return groups, nil
+}
+
+func (r *repository) IsSameOrDescendantGroup(
+	referenceGroupID string,
+	candidateGroupID string,
+	sotID string,
+) (bool, error) {
+	var exists bool
+
+	err := r.db.Raw(`
+		WITH RECURSIVE descendants(id, sot_id) AS (
+			SELECT id, sot_id
+			FROM permission_groups
+			WHERE id = ? AND sot_id = ?
+
+			UNION
+
+			SELECT h.child_group_id, h.sot_id
+			FROM permission_group_hierarchies h
+			INNER JOIN descendants d
+				ON h.parent_group_id = d.id
+				AND h.sot_id = d.sot_id
+		)
+		SELECT EXISTS (
+			SELECT 1
+			FROM descendants
+			WHERE id = ? AND sot_id = ?
+		)
+	`, referenceGroupID, sotID, candidateGroupID, sotID).
+		Scan(&exists).Error
+
+	if err != nil {
+		return false, err
+	}
+
+	return exists, nil
 }
 
 func (r *repository) UpdateGroup(
@@ -399,4 +538,102 @@ func (r *repository) DeleteGroup(id string) error {
 
 		return tx.Delete(&group).Error
 	})
+}
+
+func (r *repository) GetPermission(
+	permissionID string,
+	sotID string,
+	withUsers bool,
+) (*entity.Permission, error) {
+	var permission entity.Permission
+
+	query := r.db.
+		Where("id = ? AND sot_id = ?", permissionID, sotID)
+
+	if withUsers {
+		query = query.Preload("Users")
+	}
+
+	err := query.First(&permission).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return &permission, nil
+}
+
+func (r *repository) FindPermissionByUserID(
+	userID string,
+) (*entity.Permission, error) {
+	var permission entity.Permission
+
+	err := r.db.
+		Joins("JOIN users ON users.permission_id = permissions.id").
+		Where("users.id = ?", userID).
+		First(&permission).
+		Error
+	if err != nil {
+		return nil, err
+	}
+
+	return &permission, nil
+}
+
+func (r *repository) FindGroupBySotID(sotID string) ([]entity.PermissionGroup, error) {
+	var groups []entity.PermissionGroup
+
+	err := r.db.
+		Where("sot_id = ?", sotID).
+		Find(&groups).
+		Error
+	if err != nil {
+		return nil, err
+	}
+
+	return groups, nil
+}
+
+func (r *repository) Transaction(
+	fn func(tx *gorm.DB) error,
+) error {
+	return r.db.Transaction(fn)
+}
+
+func (r *repository) Upsert(
+	sotID string,
+	groups []entity.PermissionGroup,
+) error {
+	if len(groups) == 0 {
+		return nil
+	}
+
+	for i := range groups {
+		groups[i].SotID = sotID
+	}
+
+	return r.db.
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{
+				{Name: "id"},
+				{Name: "sot_id"},
+			},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"name",
+			}),
+		}).
+		Create(&groups).
+		Error
+}
+
+func (r *repository) DeleteMissing(
+	sotID string,
+	incomingIDs []string,
+) error {
+	query := r.db.Where("sot_id = ?", sotID)
+
+	if len(incomingIDs) > 0 {
+		query = query.Where("id NOT IN ?", incomingIDs)
+	}
+
+	return query.Delete(&entity.PermissionGroup{}).Error
 }

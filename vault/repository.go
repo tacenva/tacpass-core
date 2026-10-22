@@ -1,6 +1,8 @@
 package vault
 
 import (
+	"fmt"
+
 	"github.com/tacenva/tacpass-core/entity"
 	"gorm.io/gorm"
 )
@@ -46,33 +48,43 @@ func (r *repository) FindByID(
 }
 
 func (r *repository) FindAccessible(
-	permissionID string,
-) ([]entity.VaultAccess, error) {
-	var vaultAccessList []entity.VaultAccess
+	groupID string,
+) ([]entity.Vault, error) {
+	var vaults []entity.Vault
 
 	err := r.db.
-		Where("permission_id = ?", permissionID).
-		Preload("Vault").
-		Find(&vaultAccessList).
+		Where(`
+            EXISTS (
+                SELECT 1
+                FROM json_each(
+                    CASE
+                        WHEN json_valid(vaults.group_ids)
+                        THEN vaults.group_ids
+                        ELSE '[]'
+                    END
+                )
+                WHERE json_each.value = ?
+            )
+        `, groupID).
 		Order("id ASC").
+		Find(&vaults).
 		Error
 
 	if err != nil {
 		return nil, err
 	}
 
-	return vaultAccessList, nil
+	return vaults, nil
 }
 
 func (r *repository) Update(
 	tx *gorm.DB,
 	vault *entity.Vault,
-) error {
+) *gorm.DB {
 	return tx.
 		Model(&entity.Vault{}).
 		Where("id = ?", vault.ID).
-		Update("name", vault.Name).
-		Error
+		Update("name", vault.Name)
 }
 
 func (r *repository) FirstOrCreate(
@@ -96,4 +108,22 @@ func (r *repository) Delete(
 		Where("id = ?", id).
 		Delete(&entity.Vault{}).
 		Error
+}
+
+func (r *repository) ListPermissionGroup(sotID string) ([]entity.PermissionGroup, error) {
+	var groups []entity.PermissionGroup
+
+	if sotID == "" {
+		return nil, fmt.Errorf("SOT ID is required")
+	}
+
+	err := r.db.
+		Where("sot_id = ?", sotID).
+		Order("id ASC").
+		Find(&groups).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return groups, nil
 }

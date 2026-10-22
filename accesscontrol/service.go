@@ -3,12 +3,11 @@ package accesscontrol
 import (
 	"errors"
 
+	"github.com/tacenva/tacpass-core/contract"
 	"github.com/tacenva/tacpass-core/entity"
 	"github.com/tacenva/tacpass-core/internal/permission"
 	"github.com/tacenva/tacpass-core/internal/user"
-	"github.com/tacenva/tacpass-core/internal/vaultaccess"
 	"github.com/tacenva/tacpass-core/util/keyring"
-	"github.com/tacenva/tacpass-core/vault"
 )
 
 var (
@@ -17,35 +16,18 @@ var (
 )
 
 type Service struct {
-	userService        *user.Service
-	permissionService  *permission.Service
-	vaultAccessService *vaultaccess.Service
-	vaultService       *vault.Service
+	userService       *user.Service
+	permissionService *permission.Service
 }
 
 func NewService(
 	userService *user.Service,
 	permissionService *permission.Service,
-	vaultAccessService *vaultaccess.Service,
-	vaultService *vault.Service,
 ) *Service {
 	return &Service{
-		userService:        userService,
-		permissionService:  permissionService,
-		vaultAccessService: vaultAccessService,
-		vaultService:       vaultService,
+		userService:       userService,
+		permissionService: permissionService,
 	}
-}
-
-func (s *Service) Get(
-	authUser *entity.User,
-	id string,
-) (*entity.Permission, error) {
-	if !authUser.HasAdminPermission() {
-		return nil, ErrPermission
-	}
-
-	return s.permissionService.Get(id)
 }
 
 func (s *Service) List(
@@ -55,7 +37,7 @@ func (s *Service) List(
 		return nil, ErrPermission
 	}
 
-	return s.permissionService.List()
+	return s.permissionService.DescendantPermission(authUser.Permission.GroupID)
 }
 
 func (s *Service) Create(
@@ -64,61 +46,79 @@ func (s *Service) Create(
 	privilege entity.Privilege,
 	group *entity.PermissionGroup,
 	autoApprove bool,
-) ([]entity.VaultAccess, *entity.Permission, *keyring.KeyPair, error) {
+	sotID string,
+) (*entity.Permission, *keyring.KeyPair, error) {
 	if !authUser.HasAdminPermission() {
-		return nil, nil, nil, ErrPermission
+		return nil, nil, ErrPermission
 	}
 
-	vaultAccessList, err := s.vaultService.VaultAccessList(authUser)
+	group.SotID = sotID
+
+	permissionData, keyPair, err := s.permissionService.Create(name, privilege, group, autoApprove, authUser.Permission.GroupID)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
-	permissionData, keyPair, err := s.permissionService.Create(name, privilege, group, autoApprove)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	return vaultAccessList, permissionData, keyPair, err
+	return permissionData, keyPair, err
 }
 
 func (s *Service) Update(
 	authUser *entity.User,
 	permission *entity.Permission,
+	sotID string,
 ) error {
-	if !authUser.HasAdminPermission() {
-		return ErrPermission
+	if err := s.hasGroupPermission(
+		authUser,
+		permission.GroupID, // groupid preupdate
+		sotID,
+	); err != nil {
+		return err
 	}
 
-	return s.permissionService.Update(permission)
+	return s.permissionService.Update(permission, authUser.Permission.GroupID, sotID)
 }
 
 func (s *Service) SetRevoked(
 	authUser *entity.User,
-	id string,
+	permissionId string,
+	sotID string,
 	revoked bool,
 ) error {
-	if !authUser.HasAdminPermission() {
+	permission, err := s.permissionService.GetPermission(permissionId, sotID, true)
+	if err != nil {
+		return err
+	}
+
+	if err := s.hasGroupPermission(
+		authUser,
+		permission.GroupID,
+		sotID,
+	); err != nil {
+		return err
+	}
+
+	if permission.ID == authUser.PermissionID {
 		return ErrPermission
 	}
 
-	if id == authUser.PermissionID {
-		return ErrPermission
-	}
-
-	return s.permissionService.SetRevoked(id, revoked)
+	return s.permissionService.SetRevoked(permission.ID, revoked)
 }
 
 func (s *Service) UserList(
 	authUser *entity.User,
 	permissionId string,
+	sotID string,
 ) ([]entity.User, error) {
-	if !authUser.HasAdminPermission() {
-		return nil, ErrPermission
+	permission, err := s.permissionService.GetPermission(permissionId, sotID, true)
+	if err != nil {
+		return nil, err
 	}
 
-	permission, err := s.permissionService.Get(permissionId)
-	if err != nil {
+	if err := s.hasGroupPermission(
+		authUser,
+		permission.GroupID,
+		sotID,
+	); err != nil {
 		return nil, err
 	}
 
@@ -128,9 +128,19 @@ func (s *Service) UserList(
 func (s *Service) ApproveUser(
 	authUser *entity.User,
 	userId string,
+	sotID string,
 ) (*entity.User, error) {
-	if !authUser.HasAdminPermission() {
-		return nil, ErrPermission
+	permission, err := s.permissionService.GetPermissionByUserID(userId)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.hasGroupPermission(
+		authUser,
+		permission.GroupID,
+		sotID,
+	); err != nil {
+		return nil, err
 	}
 
 	return s.userService.UpdateStatus(
@@ -151,9 +161,19 @@ func (s *Service) ApproveUserInternal(
 func (s *Service) RevokeUser(
 	authUser *entity.User,
 	userId string,
+	sotID string,
 ) (*entity.User, error) {
-	if !authUser.HasAdminPermission() {
-		return nil, ErrPermission
+	permission, err := s.permissionService.GetPermissionByUserID(userId)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.hasGroupPermission(
+		authUser,
+		permission.GroupID,
+		sotID,
+	); err != nil {
+		return nil, err
 	}
 
 	return s.userService.UpdateStatus(
@@ -165,18 +185,29 @@ func (s *Service) RevokeUser(
 func (s *Service) DeletePermission(
 	authUser *entity.User,
 	id string,
+	sotID string,
 ) error {
-	if !authUser.HasAdminPermission() {
-		return ErrPermission
+	permission, err := s.permissionService.GetPermission(id, sotID, false)
+	if err != nil {
+		return err
+	}
+
+	if err := s.hasGroupPermission(
+		authUser,
+		permission.GroupID,
+		sotID,
+	); err != nil {
+		return err
 	}
 
 	if authUser.PermissionID == id {
 		return ErrPermission
 	}
-	return s.permissionService.Delete(id)
+
+	return s.permissionService.Delete(id, sotID)
 }
 
-func (s *Service) InitAdminPrivilege(name string) (*entity.Permission, *keyring.KeyPair, error) {
+func (s *Service) InitAdminPrivilege(name string, sotID string) (*entity.Permission, *keyring.KeyPair, error) {
 	adminExists, err := s.permissionService.AdminExists()
 	if err != nil {
 		return nil, nil, err
@@ -186,7 +217,10 @@ func (s *Service) InitAdminPrivilege(name string) (*entity.Permission, *keyring.
 		return nil, nil, errors.New("admin was initialized")
 	}
 
-	return s.permissionService.Create(name, entity.PrivilegeAdmin, &entity.PermissionGroup{}, false)
+	return s.permissionService.Create(name, entity.PrivilegeAdmin, &entity.PermissionGroup{
+		Name:  "Tacenva Admin",
+		SotID: sotID,
+	}, false, "")
 }
 
 func (s *Service) ListInternal() ([]entity.Permission, error) {
@@ -195,26 +229,44 @@ func (s *Service) ListInternal() ([]entity.Permission, error) {
 
 func (s *Service) GetInternal(
 	id string,
+	sotID string,
 ) (*entity.Permission, error) {
-	return s.permissionService.Get(id)
+	return s.permissionService.GetPermission(id, sotID, true)
 }
 
-func (s *Service) GetGroups(
+func (s *Service) GetGroupDescendants(
 	authUser *entity.User,
-) ([]entity.PermissionGroup, error) {
-	if !authUser.HasAdminPermission() {
+) (*contract.GroupAssignment, error) {
+	if !authUser.HasWritePermission() {
 		return nil, ErrPermission
 	}
 
-	return s.permissionService.GetGroups()
+	groupID := authUser.Permission.GroupID
+	groups, err := s.permissionService.GetGroupDescendants(groupID)
+	if err != nil {
+		return nil, err
+	}
+	return &contract.GroupAssignment{
+		ID:    groupID,
+		Items: groups,
+	}, nil
 }
 
 func (s *Service) UpdateGroup(
 	authUser *entity.User,
 	group *entity.PermissionGroup,
+	sotID string,
 ) error {
 	if !authUser.HasAdminPermission() {
 		return ErrPermission
+	}
+
+	if err := s.hasGroupPermission(
+		authUser,
+		group.ID,
+		sotID,
+	); err != nil {
+		return err
 	}
 
 	return s.permissionService.UpdateGroup(group)
@@ -223,10 +275,48 @@ func (s *Service) UpdateGroup(
 func (s *Service) DeleteGroup(
 	authUser *entity.User,
 	groupID string,
+	sotID string,
+) error {
+	if err := s.hasGroupPermission(
+		authUser,
+		groupID,
+		sotID,
+	); err != nil {
+		return err
+	}
+
+	return s.permissionService.DeleteGroup(groupID)
+}
+
+func (s *Service) hasGroupPermission(
+	authUser *entity.User,
+	groupID string,
+	sotID string,
 ) error {
 	if !authUser.HasAdminPermission() {
 		return ErrPermission
 	}
 
-	return s.permissionService.DeleteGroup(groupID)
+	accessible, err := s.permissionService.HasGroupPermission(
+		authUser.Permission.GroupID,
+		groupID,
+		sotID,
+	)
+	if err != nil {
+		return err
+	}
+
+	if !accessible {
+		return ErrPermission
+	}
+
+	return nil
+}
+
+func (s *Service) GroupList(sotID string) ([]entity.PermissionGroup, error) {
+	return s.permissionService.GroupList(sotID)
+}
+
+func (s *Service) SyncGroups(sotID string, groups []entity.PermissionGroup) error {
+	return s.permissionService.SyncGroups(sotID, groups)
 }

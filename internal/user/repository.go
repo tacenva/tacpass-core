@@ -18,7 +18,13 @@ func NewRepository(db *gorm.DB) *repository {
 }
 
 func (r *repository) Create(user *entity.User) error {
-	return r.db.Create(user).Error
+	if err := r.db.Create(user).Error; err != nil {
+		return err
+	}
+
+	return r.db.
+		Preload("Permission").
+		First(user, "id = ?", user.ID).Error
 }
 
 func (r *repository) FindByID(id string) (*entity.User, error) {

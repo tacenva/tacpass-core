@@ -114,6 +114,7 @@ func (s *Service) Create(
 	data []byte,
 	sotID string,
 	lastChangeID *string,
+	hostname string,
 ) error {
 	vaultID = strings.TrimSpace(vaultID)
 	if vaultID == "" {
@@ -146,6 +147,7 @@ func (s *Service) Create(
 			*recordID,
 			sync.OperationCreate,
 			sotID,
+			hostname,
 		)
 	})
 	if err != nil {
@@ -162,6 +164,7 @@ func (s *Service) Update(
 	data []byte,
 	sotID string,
 	lastChangeID *string,
+	hostname string,
 ) error {
 	vaultID = strings.TrimSpace(vaultID)
 	recordID = strings.TrimSpace(recordID)
@@ -202,6 +205,7 @@ func (s *Service) Update(
 			recordID,
 			sync.OperationUpdate,
 			sotID,
+			hostname,
 		)
 	})
 }
@@ -231,6 +235,7 @@ func (s *Service) Delete(
 	recordID string,
 	sotID string,
 	lastChangeID *string,
+	hostname string,
 ) error {
 	vaultID = strings.TrimSpace(vaultID)
 	recordID = strings.TrimSpace(recordID)
@@ -264,6 +269,7 @@ func (s *Service) Delete(
 			recordID,
 			sync.OperationDelete,
 			sotID,
+			hostname,
 		)
 	})
 }
@@ -392,7 +398,7 @@ func (s *Service) List(
 
 	err = fileDB.FindAll(
 		&records,
-	).Order("ID ASC").Err
+	).Order("ID ASC").Error
 	if err != nil {
 		return nil, err
 	}
@@ -520,6 +526,26 @@ func (s *Service) Sync(
 	}
 
 	return s.insertSyncChanges(sotID, vaultID, changeBase.SyncChanges)
+}
+
+func (s *Service) SyncOnSoT(
+	authUser *entity.User,
+	vaultDir string,
+	sotID string,
+	vaultID string,
+	pendingChange *contract.PendingVaultRecordChange,
+) error {
+	for i := range pendingChange.SyncChanges {
+		pendingChange.SyncChanges[i].ChangedBy = authUser.Hostname
+	}
+
+	return s.Sync(
+		vaultDir,
+		sotID,
+		vaultID,
+		pendingChange,
+		nil,
+	)
 }
 
 func (s *Service) SetSyncStateToBeLastest(

@@ -23,9 +23,9 @@ const (
 type Config struct {
 	BaseDir string `toml:"-"`
 
-	SoTULID string       `toml:"sot_ulid"`
-	Server  ServerConfig `toml:"server"`
-	TLS     TLSConfig    `toml:"tls"`
+	SotID  string       `toml:"sot_id"`
+	Server ServerConfig `toml:"server"`
+	TLS    TLSConfig    `toml:"tls"`
 }
 
 type ServerConfig struct {
@@ -68,17 +68,17 @@ func (cfg *Config) Path(parts ...string) string {
 func (cfg *Config) VaultDir() string {
 	return cfg.Path(
 		NodeDirName,
-		cfg.SoTULID,
+		cfg.SotID,
 		"vault",
 	)
 }
 
-func (cfg *Config) setSoTULID(sotULID string) error {
-	if sotULID == "" {
+func (cfg *Config) setSotID(sotID string) error {
+	if sotID == "" {
 		return fmt.Errorf("sot ulid is required")
 	}
 
-	cfg.SoTULID = sotULID
+	cfg.SotID = sotID
 
 	if err := cfg.Save(); err != nil {
 		return fmt.Errorf(
@@ -191,8 +191,8 @@ func LoadOrCreate(dev bool) (*Config, error) {
 			return nil, err
 		}
 
-		if cfg.SoTULID == "" {
-			if err := cfg.setSoTULID(
+		if cfg.SotID == "" {
+			if err := cfg.setSotID(
 				ulid.Make().String(),
 			); err != nil {
 				return nil, err
@@ -214,7 +214,7 @@ func LoadOrCreate(dev bool) (*Config, error) {
 
 	cfg.BaseDir = baseDir
 
-	if err := cfg.setSoTULID(
+	if err := cfg.setSotID(
 		ulid.Make().String(),
 	); err != nil {
 		return nil, err

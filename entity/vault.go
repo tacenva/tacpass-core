@@ -19,6 +19,9 @@ type Vault struct {
 	ID        string    `json:"id,omitempty" gorm:"type:varchar(26);primaryKey"`
 	Name      string    `json:"name,omitempty" gorm:"type:varchar(255);not null"`
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
+
+	WrappedKey string   `json:"wrapped_key,omitempty" gorm:"-"`
+	GroupIDs   []string `json:"group_ids" gorm:"serializer:json;type:text;not null"`
 }
 
 func (p *Vault) BeforeCreate(tx *gorm.DB) error {
