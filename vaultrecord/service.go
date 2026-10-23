@@ -540,7 +540,7 @@ func (s *Service) SyncOnSot(
 	sotStartChangeID string,
 	limit int,
 	replicaChanges *contract.PendingVaultRecordChange,
-) (successList *contract.PendingVaultRecordChange, err error) {
+) (err error) {
 	isAllowed := true
 	err = s.repository.Transaction(func(tx *gorm.DB) error {
 		isAllowed, err = s.repository.IsAllowedToChange(
@@ -552,7 +552,7 @@ func (s *Service) SyncOnSot(
 	})
 
 	if !isAllowed {
-		return nil, ErrForbidden
+		return ErrForbidden
 	}
 
 	sotChanges, err := s.GetChangesAfter(
@@ -563,30 +563,30 @@ func (s *Service) SyncOnSot(
 		limit,
 	)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	appliedChanges := s.MergePendingVaultRecordChange(
-		successList,
+		replicaChanges,
 		sotChanges,
 	)
 	if appliedChanges == nil {
-		return nil, nil
+		return nil
 	}
 
 	if err := s.applyChange(vaultDir, vaultID, appliedChanges); err != nil {
-		return nil, err
+		return err
 	}
 
 	for i := range replicaChanges.SyncChanges {
 		replicaChanges.SyncChanges[i].ChangedBy = authUser.Hostname
 	}
 
-	if err = s.insertSyncChanges(sotID, vaultID, successList.SyncChanges); err != nil {
-		return nil, err
+	if err = s.insertSyncChanges(sotID, vaultID, replicaChanges.SyncChanges); err != nil {
+		return err
 	}
 
-	return successList, nil
+	return nil
 }
 
 func (s *Service) SetSyncStateToBeLastest(
