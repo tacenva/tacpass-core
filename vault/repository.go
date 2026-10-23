@@ -1,6 +1,7 @@
 package vault
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/tacenva/tacpass-core/entity"
@@ -126,4 +127,39 @@ func (r *repository) ListPermissionGroup(sotID string) ([]entity.PermissionGroup
 	}
 
 	return groups, nil
+}
+
+func (r *repository) IsAllowedToChange(
+	tx *gorm.DB,
+	vaultID string,
+	groupID string,
+) (bool, error) {
+	var vault entity.Vault
+
+	err := tx.
+		Where(`
+			EXISTS (
+				SELECT 1
+				FROM json_each(
+					CASE
+						WHEN json_valid(vaults.group_ids)
+						THEN vaults.group_ids
+						ELSE '[]'
+					END
+				)
+				WHERE json_each.value = ?
+			)
+			AND vaults.id = ?
+		`, groupID, vaultID).
+		First(&vault).
+		Error
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
 }

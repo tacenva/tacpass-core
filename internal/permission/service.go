@@ -213,31 +213,12 @@ func (s *Service) Delete(id string, sotID string) error {
 	return s.repository.Delete(id)
 }
 
-// func (s *Service) ConnectedPublicKeys(publicKey string) ([]entity.Permission, error) {
-// 	permission, err := s.repository.FindByPublicKey(publicKey)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	groups, err := s.repository.GetGroupDescendants(permission.GroupID)
-
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	groupIDs := make([]string, 0, len(groups))
-// 	for _, group := range groups {
-// 		groupIDs = append(groupIDs, group.ID)
-// 	}
-
-// 	return s.repository.ConnectedPublicKeys(groupIDs)
-// }
-
 func (s *Service) GetPublicKeysByGroupIDs(
 	groupIDs []string,
 	sotID string,
-) ([]entity.Permission, error) {
+) (map[string][]entity.Permission, error) {
 	if len(groupIDs) == 0 {
-		return []entity.Permission{}, nil
+		return nil, nil
 	}
 
 	if sotID == "" {
@@ -291,7 +272,7 @@ func (s *Service) HasGroupPermission(
 func (s *Service) GetPermission(permissionID string, sotID string, withBool bool) (*entity.Permission, error) {
 	permissionID = strings.TrimSpace(permissionID)
 	sotID = strings.TrimSpace(sotID)
-	if permissionID != "" || sotID != "" {
+	if permissionID == "" || sotID == "" {
 		return nil, errors.New("required value")
 	}
 
@@ -310,10 +291,6 @@ func (s *Service) SyncGroups(
 	sotID string,
 	incomingGroups []entity.PermissionGroup,
 ) error {
-	for _, group := range incomingGroups {
-		group.SotID = sotID
-	}
-
 	incomingIDs := make([]string, 0, len(incomingGroups))
 	seen := make(map[string]struct{}, len(incomingGroups))
 
@@ -334,11 +311,11 @@ func (s *Service) SyncGroups(
 	}
 
 	return s.repository.Transaction(func(tx *gorm.DB) error {
-		if err := s.repository.Upsert(sotID, incomingGroups); err != nil {
+		if err := s.repository.Upsert(tx, sotID, incomingGroups); err != nil {
 			return err
 		}
 
-		if err := s.repository.DeleteMissing(sotID, incomingIDs); err != nil {
+		if err := s.repository.DeleteMissing(tx, sotID, incomingIDs); err != nil {
 			return err
 		}
 

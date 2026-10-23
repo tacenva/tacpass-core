@@ -3,6 +3,7 @@ package vaultaccess
 import (
 	"github.com/tacenva/tacpass-core/entity"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type repository struct {
@@ -51,46 +52,6 @@ func (r *repository) CreateBulkTx(
 	return tx.
 		CreateInBatches(vaultAccesses, 100).
 		Error
-}
-
-func (r *repository) CreateOrUpdateBulkTx(
-	tx *gorm.DB,
-	vaultAccesses []*entity.VaultAccess,
-) error {
-	if len(vaultAccesses) == 0 {
-		return nil
-	}
-
-	for _, vaultAccess := range vaultAccesses {
-		if vaultAccess == nil {
-			continue
-		}
-
-		if vaultAccess.ID == "" {
-			return gorm.ErrInvalidData
-		}
-
-		result := tx.
-			Model(&entity.VaultAccess{}).
-			Where("id = ?", vaultAccess.ID).
-			Updates(map[string]any{
-				"vault_id":      vaultAccess.VaultID,
-				"permission_id": vaultAccess.PermissionID,
-				"vault_key":     vaultAccess.VaultKey,
-			})
-
-		if result.Error != nil {
-			return result.Error
-		}
-
-		if result.RowsAffected == 0 {
-			if err := tx.Create(vaultAccess).Error; err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
 }
 
 func (r *repository) FindByPermissionID(
@@ -213,5 +174,61 @@ func (r *repository) DeleteBulkByGroupIDsTx(
 	return tx.
 		Where("permission_id IN (?)", permissionIDs).
 		Delete(&entity.VaultAccess{}).
+		Error
+}
+
+func (r *repository) Transaction(
+	fn func(tx *gorm.DB) error,
+) error {
+	return r.db.Transaction(fn)
+}
+
+func (r *repository) Upsert(
+	tx *gorm.DB,
+	vaultAccesses []entity.VaultAccess,
+) error {
+	if len(vaultAccesses) == 0 {
+		return nil
+	}
+
+	records := make([]entity.VaultAccess, 0, len(vaultAccesses))
+
+	for _, item := range vaultAccesses {
+		if item.ID == "" {
+			return gorm.ErrInvalidData
+		}
+
+		records = append(records, item)
+	}
+
+	if len(records) == 0 {
+		return nil
+	}
+
+	return tx.
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{
+				{Name: "id"},
+			},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"vault_id",
+				"permission_id",
+				"vault_key",
+			}),
+		}).
+		Create(&records).
+		Error
+}
+
+func (r *repository) DeleteMissing(
+	tx *gorm.DB,
+	incomingIDs []string,
+) error {
+	if len(incomingIDs) > 0 {
+		return nil
+	}
+	return tx.
+		Where("id NOT IN ?", incomingIDs).
+		Delete(&entity.PermissionGroup{}).
 		Error
 }

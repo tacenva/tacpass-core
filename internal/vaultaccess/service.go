@@ -2,6 +2,7 @@ package vaultaccess
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/tacenva/tacpass-core/entity"
@@ -142,25 +143,44 @@ func (s *Service) CreateBulkTx(
 	return values, nil
 }
 
-func (s *Service) CreateOrUpdateBulkTx(
+func (s *Service) Sync(
 	tx *gorm.DB,
-	values []entity.VaultAccess,
+	vaultID string,
+	incomingVaultAccesses []entity.VaultAccess,
 ) error {
-	if len(values) == 0 {
+	if len(incomingVaultAccesses) == 0 {
 		return nil
 	}
 
-	vaultAccesses := make([]*entity.VaultAccess, len(values))
+	incomingIDs := make([]string, 0, len(incomingVaultAccesses))
+	seen := make(map[string]struct{}, len(incomingVaultAccesses))
 
-	for i := range values {
-		if err := validateVaultAccess(&values[i], true); err != nil {
+	for i := range incomingVaultAccesses {
+		id := incomingVaultAccesses[i].ID
+
+		if id == "" {
+			return fmt.Errorf("group ID cannot be empty")
+		}
+
+		if _, exists := seen[id]; exists {
+			return fmt.Errorf("duplicate group ID: %s", id)
+		}
+
+		seen[id] = struct{}{}
+		incomingIDs = append(incomingIDs, id)
+	}
+
+	return s.repository.Transaction(func(tx *gorm.DB) error {
+		if err := s.repository.Upsert(tx, incomingVaultAccesses); err != nil {
 			return err
 		}
 
-		vaultAccesses[i] = &values[i]
-	}
+		if err := s.repository.DeleteMissing(tx, incomingIDs); err != nil {
+			return err
+		}
 
-	return s.repository.CreateOrUpdateBulkTx(tx, vaultAccesses)
+		return nil
+	})
 }
 
 func (s *Service) IsVaultAccesible(

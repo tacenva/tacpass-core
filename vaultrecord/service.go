@@ -24,13 +24,16 @@ const syncEntityVaultRecord = "vault_record"
 
 type Service struct {
 	syncService *sync.Service
+	repository  *repository
 }
 
 func NewService(
 	syncService *sync.Service,
+	repository *repository,
 ) *Service {
 	return &Service{
 		syncService: syncService,
+		repository:  repository,
 	}
 }
 
@@ -427,6 +430,7 @@ func (s *Service) MergePendingVaultRecordChange(
 		compChanges,
 		base.EncryptedRecords,
 		compData,
+		nil,
 	)
 
 	return &contract.PendingVaultRecordChange{
@@ -506,7 +510,7 @@ func (s *Service) insertSyncChanges(
 	)
 }
 
-func (s *Service) Sync(
+func (s *Service) SyncOnReplica(
 	vaultDir string,
 	sotID string,
 	vaultID string,
@@ -528,24 +532,61 @@ func (s *Service) Sync(
 	return s.insertSyncChanges(sotID, vaultID, changeBase.SyncChanges)
 }
 
-func (s *Service) SyncOnSoT(
+func (s *Service) SyncOnSot(
 	authUser *entity.User,
 	vaultDir string,
 	sotID string,
 	vaultID string,
-	pendingChange *contract.PendingVaultRecordChange,
-) error {
-	for i := range pendingChange.SyncChanges {
-		pendingChange.SyncChanges[i].ChangedBy = authUser.Hostname
+	sotStartChangeID string,
+	limit int,
+	replicaChanges *contract.PendingVaultRecordChange,
+) (successList *contract.PendingVaultRecordChange, err error) {
+	isAllowed := true
+	err = s.repository.Transaction(func(tx *gorm.DB) error {
+		isAllowed, err = s.repository.IsAllowedToChange(
+			tx,
+			vaultID,
+			authUser.Permission.GroupID,
+		)
+		return err
+	})
+
+	if !isAllowed {
+		return nil, ErrForbidden
 	}
 
-	return s.Sync(
+	sotChanges, err := s.GetChangesAfter(
 		vaultDir,
-		sotID,
 		vaultID,
-		pendingChange,
-		nil,
+		sotID,
+		sotStartChangeID,
+		limit,
 	)
+	if err != nil {
+		return nil, err
+	}
+
+	appliedChanges := s.MergePendingVaultRecordChange(
+		successList,
+		sotChanges,
+	)
+	if appliedChanges == nil {
+		return nil, nil
+	}
+
+	if err := s.applyChange(vaultDir, vaultID, appliedChanges); err != nil {
+		return nil, err
+	}
+
+	for i := range replicaChanges.SyncChanges {
+		replicaChanges.SyncChanges[i].ChangedBy = authUser.Hostname
+	}
+
+	if err = s.insertSyncChanges(sotID, vaultID, successList.SyncChanges); err != nil {
+		return nil, err
+	}
+
+	return successList, nil
 }
 
 func (s *Service) SetSyncStateToBeLastest(

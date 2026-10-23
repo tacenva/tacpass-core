@@ -143,10 +143,6 @@ func (s *Service) GetChangesAfter(
 		return nil, fmt.Errorf("sync entity is required")
 	}
 
-	// if startID == "" {
-	// 	return nil, fmt.Errorf("current id is required")
-	// }
-
 	if limit <= 0 {
 		limit = 500
 	}
@@ -201,9 +197,6 @@ func (s *Service) GetSyncState(
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return SyncState{}, nil
-			// return SyncState{}, fmt.Errorf(
-			// 	"sync state not found",
-			// )
 		}
 
 		return SyncState{}, fmt.Errorf(
@@ -318,7 +311,14 @@ func MergePendingChanges[T any](
 	compChanges []SyncChange,
 	baseData map[string]T,
 	compData map[string]T,
+	shouldUpdateData func(mergedData, compData T) bool,
 ) ([]SyncChange, map[string]T) {
+	if shouldUpdateData == nil {
+		shouldUpdateData = func(mergedData, compData T) bool {
+			return true
+		}
+	}
+
 	mergedChanges := make(map[string]SyncChange)
 	mergedData := make(map[string]T)
 
@@ -358,7 +358,11 @@ func MergePendingChanges[T any](
 		if change.Operation == OperationDelete {
 			delete(mergedChanges, entityID)
 			delete(mergedData, entityID)
-		} else if change.ID > existing.ID {
+		} else if change.ID > existing.ID &&
+			shouldUpdateData(
+				mergedData[entityID],
+				compData[entityID],
+			) {
 			mergedData[entityID] = compData[entityID]
 		}
 	}

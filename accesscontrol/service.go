@@ -3,7 +3,6 @@ package accesscontrol
 import (
 	"errors"
 
-	"github.com/tacenva/tacpass-core/contract"
 	"github.com/tacenva/tacpass-core/entity"
 	"github.com/tacenva/tacpass-core/internal/permission"
 	"github.com/tacenva/tacpass-core/internal/user"
@@ -234,24 +233,6 @@ func (s *Service) GetInternal(
 	return s.permissionService.GetPermission(id, sotID, true)
 }
 
-func (s *Service) GetGroupDescendants(
-	authUser *entity.User,
-) (*contract.GroupAssignment, error) {
-	if !authUser.HasWritePermission() {
-		return nil, ErrPermission
-	}
-
-	groupID := authUser.Permission.GroupID
-	groups, err := s.permissionService.GetGroupDescendants(groupID)
-	if err != nil {
-		return nil, err
-	}
-	return &contract.GroupAssignment{
-		ID:    groupID,
-		Items: groups,
-	}, nil
-}
-
 func (s *Service) UpdateGroup(
 	authUser *entity.User,
 	group *entity.PermissionGroup,
@@ -320,3 +301,17 @@ func (s *Service) GroupList(sotID string) ([]entity.PermissionGroup, error) {
 func (s *Service) SyncGroups(sotID string, groups []entity.PermissionGroup) error {
 	return s.permissionService.SyncGroups(sotID, groups)
 }
+
+// func (s *Service) GroupAssignment(authUser *entity.User, sotID string) (*contract.GroupAssignment, error) {
+// 	response := contract.GroupAssignment{
+// 		ID: authUser.Permission.GroupID,
+// 	}
+// 	if authUser.HasWritePermission() {
+// 		groups, err := s.permissionService.GroupList(sotID)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 		response.Items = groups
+// 	}
+// 	return &response, nil
+// }

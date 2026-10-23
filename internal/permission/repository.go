@@ -365,44 +365,31 @@ func (r *repository) ListPublicKey() ([]entity.Permission, error) {
 	return permissions, nil
 }
 
-// func (r *repository) ConnectedPublicKeys(
-// 	groupIDs []string,
-// ) ([]entity.Permission, error) {
-// 	if len(groupIDs) == 0 {
-// 		return []entity.Permission{}, nil
-// 	}
-
-// 	var permissions []entity.Permission
-
-// 	err := r.db.
-// 		Select("id", "public_key").
-// 		Where("group_id IN ?", groupIDs).
-// 		Order("id ASC").
-// 		Find(&permissions).
-// 		Error
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	return permissions, nil
-// }
-
 func (r *repository) GetPublicKeysByGroupIDs(
 	groupIDs []string,
 	sotID string,
-) ([]entity.Permission, error) {
+) (map[string][]entity.Permission, error) {
 	var permissions []entity.Permission
 
 	err := r.db.
 		Model(&entity.Permission{}).
-		Select("id", "public_key").
+		Select("id", "public_key", "group_id").
 		Where("group_id IN ? AND sot_id = ?", groupIDs, sotID).
 		Find(&permissions).Error
 	if err != nil {
 		return nil, err
 	}
 
-	return permissions, nil
+	result := make(map[string][]entity.Permission)
+
+	for _, permission := range permissions {
+		result[permission.GroupID] = append(
+			result[permission.GroupID],
+			permission,
+		)
+	}
+
+	return result, nil
 }
 
 func (r *repository) GetGroupDescendants(
@@ -600,6 +587,7 @@ func (r *repository) Transaction(
 }
 
 func (r *repository) Upsert(
+	tx *gorm.DB,
 	sotID string,
 	groups []entity.PermissionGroup,
 ) error {
@@ -611,7 +599,7 @@ func (r *repository) Upsert(
 		groups[i].SotID = sotID
 	}
 
-	return r.db.
+	return tx.
 		Clauses(clause.OnConflict{
 			Columns: []clause.Column{
 				{Name: "id"},
@@ -626,10 +614,11 @@ func (r *repository) Upsert(
 }
 
 func (r *repository) DeleteMissing(
+	tx *gorm.DB,
 	sotID string,
 	incomingIDs []string,
 ) error {
-	query := r.db.Where("sot_id = ?", sotID)
+	query := tx.Where("sot_id = ?", sotID)
 
 	if len(incomingIDs) > 0 {
 		query = query.Where("id NOT IN ?", incomingIDs)

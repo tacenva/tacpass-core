@@ -48,9 +48,7 @@ func NewServices(
 		syncService,
 	)
 
-	vaultRecordService := vaultrecord.NewService(
-		syncService,
-	)
+	vaultRecordService := vaultService.GetVaultRecordService()
 
 	accessControlService := accesscontrol.NewService(
 		userService,
