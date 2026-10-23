@@ -260,9 +260,14 @@ func (s *Service) UpdateOnSot(
 	vault *entity.Vault,
 	sotID string,
 	lastChangeID *string,
+	unwrappedVaultKey []byte,
 ) error {
 	if authUser == nil || !authUser.HasWritePermission() {
 		return ErrPermission
+	}
+
+	if vault == nil {
+		return ErrNotFound
 	}
 
 	vault.ID = strings.TrimSpace(vault.ID)
@@ -276,61 +281,83 @@ func (s *Service) UpdateOnSot(
 		return ErrNameEmpty
 	}
 
-	_, err := s.repository.FindByID(vault.ID)
-	if err != nil {
-		return err
-	}
-
-	err = s.repository.Transaction(func(tx *gorm.DB) error {
+	return s.repository.Transaction(func(tx *gorm.DB) error {
 		var oldVault entity.Vault
 		if err := tx.First(&oldVault, "id = ?", vault.ID).Error; err != nil {
 			return err
 		}
 
+		// Hitung perubahan sebelum update.
+		toCreateIDs, toDeleteIDs := diffIDs(
+			oldVault.GroupIDs,
+			vault.GroupIDs,
+		)
+
+		log.Printf(
+			"[DEBUG] vault=%s oldGroupIDs=%s newGroupIDs=%s toCreate=%s toDelete=%s",
+			vault.ID,
+			mustJSON(oldVault.GroupIDs),
+			mustJSON(vault.GroupIDs),
+			mustJSON(toCreateIDs),
+			mustJSON(toDeleteIDs),
+		)
+
+		// Update data vault.
 		result := s.repository.Update(tx, vault)
 		if result.Error != nil {
 			return result.Error
 		}
 
-		if result.RowsAffected > 0 {
-			return nil
-		}
+		// Buat VaultAccess untuk group baru.
+		if len(toCreateIDs) > 0 {
+			permissions, err := s.permissionService.GetPublicKeysByGroupIDs(
+				toCreateIDs,
+				sotID,
+			)
+			if err != nil {
+				return err
+			}
 
-		toCreateIds, toDeleteIds := diffIDs(
-			oldVault.GroupIDs,
-			vault.GroupIDs,
-		)
+			vaList := make([]entity.VaultAccess, 0)
 
-		toCreate, err := s.permissionService.GetPublicKeysByGroupIDs(toCreateIds, sotID)
-		if err != nil {
-			return err
-		}
+			for _, groupPermissions := range permissions {
+				for _, permissionData := range groupPermissions {
+					keyPair := keyring.FromPublicKey(permissionData.PublicKey)
+					vaultKey, err := keyPair.Seal(unwrappedVaultKey)
+					if err != nil {
+						continue
+					}
 
-		vaList := make(
-			[]entity.VaultAccess,
-			0,
-			len(toCreate),
-		)
+					vaList = append(vaList, entity.VaultAccess{
+						VaultID:      vault.ID,
+						PermissionID: permissionData.ID,
+						VaultKey:     vaultKey,
+					})
+				}
+			}
 
-		for groupID := range toCreate {
-			curPermission := toCreate[groupID]
-			for _, permissionData := range curPermission {
-				vaList = append(vaList, entity.VaultAccess{
-					VaultID:      vault.ID,
-					PermissionID: permissionData.ID,
-				})
+			if len(vaList) > 0 {
+				if _, err := s.vaultaccessService.CreateBulkTx(
+					tx,
+					vaList,
+				); err != nil {
+					return err
+				}
 			}
 		}
 
-		if _, err := s.vaultaccessService.CreateBulkTx(tx, vaList); err != nil {
-			return err
+		// Hapus akses untuk group yang dilepas.
+		if len(toDeleteIDs) > 0 {
+			if err := s.vaultaccessService.DeleteBulkByGroupIDsTx(
+				tx,
+				toDeleteIDs,
+			); err != nil {
+				return err
+			}
 		}
 
-		if err := s.vaultaccessService.DeleteBulkByGroupIDsTx(tx, toDeleteIds); err != nil {
-			return err
-		}
-
-		if err := s.syncService.RecordChange(
+		// Catat perubahan untuk sinkronisasi.
+		return s.syncService.RecordChange(
 			tx,
 			lastChangeID,
 			syncEntityVault,
@@ -338,18 +365,16 @@ func (s *Service) UpdateOnSot(
 			sync.OperationUpdate,
 			sotID,
 			authUser.Hostname,
-		); err != nil {
-			return err
-		}
-
-		return nil
+		)
 	})
+}
 
+func mustJSON(v any) string {
+	data, err := json.Marshal(v)
 	if err != nil {
-		return err
+		return "<marshal error: " + err.Error() + ">"
 	}
-
-	return nil
+	return string(data)
 }
 
 func (s *Service) UpdateOnReplica(
@@ -501,6 +526,7 @@ func (s *Service) GetSyncLatestChangeID(
 
 func (s *Service) GetChangesAfterOnSot(
 	sotID string,
+	permissionID string,
 	syncLastChangeID string,
 	syncLimit int,
 ) (*contract.PendingVaultChange, error) {
@@ -515,9 +541,9 @@ func (s *Service) GetChangesAfterOnSot(
 	}
 
 	vaultChangeDataList := make(map[string]contract.VaultChangeData)
+
 	for _, change := range changes {
-		existing, exist := vaultChangeDataList[change.EntityID]
-		if exist {
+		if _, exists := vaultChangeDataList[change.EntityID]; exists {
 			continue
 		}
 
@@ -525,30 +551,35 @@ func (s *Service) GetChangesAfterOnSot(
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				continue
-			} else {
-				return nil, err
 			}
-		}
-
-		existing.Vault = *vault
-		vaultChangeDataList[change.EntityID] = existing
-	}
-
-	for vaultID := range vaultChangeDataList {
-		existing := vaultChangeDataList[vaultID]
-		if len(existing.VaultAccessList) > 0 {
-			continue
-		}
-
-		vaFromVault, err := s.vaultaccessService.FindByVaultID(
-			vaultID,
-		)
-		if err != nil {
 			return nil, err
 		}
 
-		existing.VaultAccessList = vaFromVault
-		vaultChangeDataList[vaultID] = existing
+		vaultChangeDataList[change.EntityID] = contract.VaultChangeData{
+			Vault: *vault,
+		}
+	}
+
+	for vaultID, data := range vaultChangeDataList {
+		vaFromVault, err := s.vaultaccessService.FindByVaultAndPermission(
+			vaultID,
+			permissionID,
+		)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				log.Printf(
+					"[DEBUG] VaultAccess tidak ditemukan: vaultID=%s permissionID=%s",
+					vaultID,
+					permissionID,
+				)
+				continue
+			}
+
+			return nil, err
+		}
+
+		data.VaultAccessList = []entity.VaultAccess{*vaFromVault}
+		vaultChangeDataList[vaultID] = data
 	}
 
 	return &contract.PendingVaultChange{
@@ -722,8 +753,9 @@ func (s *Service) applyChangeOnSot(
 }
 
 func (s *Service) ApplyChangeOnReplica(
+	vaultDir string,
 	vaultChange *contract.PendingVaultChange,
-	dbFile *database.DatabaseFile,
+	vaultFile *database.DatabaseFile,
 ) error {
 	if vaultChange == nil {
 		return nil
@@ -736,28 +768,66 @@ func (s *Service) ApplyChangeOnReplica(
 
 		if len(vaultChangeData.VaultAccessList) > 0 {
 			vaData := vaultChangeData.VaultAccessList[0]
+
+			debugJSON, err := json.MarshalIndent(vaData, "", "  ")
+			if err != nil {
+				log.Printf("[DEBUG] Marshal VaultAccess error: %v", err)
+			} else {
+				log.Printf("[DEBUG] VaultAccessList[0]:\n%s", string(debugJSON))
+			}
+
 			vault.WrappedKey = vaData.VaultKey
+
+			log.Printf(
+				"[DEBUG] WrappedKey assigned: vaultID=%s, wrappedKey=%s",
+				vault.ID,
+				vault.WrappedKey,
+			)
+		} else {
+			log.Printf(
+				"[DEBUG] VaultAccessList kosong: vaultID=%s",
+				vault.ID,
+			)
 		}
 
 		switch change.Operation {
 		case sync.OperationCreate:
-			if err := dbFile.Insert(&vault).Error; err != nil {
+			if err := vaultFile.Insert(&vault).Error; err != nil {
 				return err
 			}
 
 		case sync.OperationUpdate:
-			if err := dbFile.Update(&vault).Error; err != nil {
+			raw, err := json.Marshal(vault)
+			if err != nil {
+				return err
+			}
+
+			log.Printf("[DEBUG] Vault JSON before Update: %s", string(raw))
+
+			result := vaultFile.Update(&vault)
+			if result.Error != nil {
+				if errors.Is(result.Error, database.ErrRecordNotFound) {
+					continue
+				}
+				return result.Error
+			}
+
+			log.Printf("[DEBUG] Update result: ID=%s, Updated=%d",
+				result.ID, result.Updated,
+			)
+
+		case sync.OperationDelete:
+			if err := vaultFile.Delete(vaultID).Error; err != nil {
 				if errors.Is(err, database.ErrRecordNotFound) {
 					continue
 				}
 				return err
 			}
 
-		case sync.OperationDelete:
-			if err := dbFile.Delete(vaultID).Error; err != nil {
-				if errors.Is(err, database.ErrRecordNotFound) {
-					continue
-				}
+			if err := s.vaultRecordService.Destroy(
+				vaultDir,
+				vault.ID,
+			); err != nil {
 				return err
 			}
 		}
@@ -787,6 +857,7 @@ func (s *Service) insertSyncChanges(
 }
 
 func (s *Service) SyncOnReplica(
+	vaultDir string,
 	sotID string,
 	groupID string,
 	replicaChanges *contract.PendingVaultChange,
@@ -807,7 +878,7 @@ func (s *Service) SyncOnReplica(
 		return nil
 	}
 
-	if err := s.ApplyChangeOnReplica(appliedChanges, dbFile); err != nil {
+	if err := s.ApplyChangeOnReplica(vaultDir, appliedChanges, dbFile); err != nil {
 		return err
 	}
 
@@ -816,6 +887,7 @@ func (s *Service) SyncOnReplica(
 
 func (s *Service) SyncOnSot(
 	sotID string,
+	permissionID string,
 	groupID string,
 	changedBy string,
 	sotStartChangeID string,
@@ -832,6 +904,7 @@ func (s *Service) SyncOnSot(
 
 	sotChanges, err := s.GetChangesAfterOnSot(
 		sotID,
+		permissionID,
 		sotStartChangeID,
 		limit,
 	)
@@ -940,7 +1013,7 @@ func (s *Service) SetSyncStateToBeLastest(
 	})
 }
 
-func (s *Service) VaultAccessList(
+func (s *Service) VaultAccess(
 	vaultID string,
 	permissionID string,
 ) (*entity.VaultAccess, error) {

@@ -61,10 +61,15 @@ func (s *Service) Enroll(
 	}
 
 	if userStatus == entity.UserStatusApproved {
-		groups, err := s.permissionService.GroupList(sotID)
-		if err != nil {
-			return nil, err
+		var groups []entity.PermissionGroup
+
+		if permission.Privilege != entity.PrivilegeRead {
+			groups, err = s.permissionService.GroupList(sotID)
+			if err != nil {
+				return nil, err
+			}
 		}
+
 		response.GroupAssignment = &contract.GroupAssignment{
 			ID:    user.Permission.GroupID,
 			Items: groups,
@@ -118,16 +123,17 @@ func (s *Service) CheckStatus(
 		return &authData, permission.ErrRevoked
 	}
 
+	var groups []entity.PermissionGroup
 	if userData.HasWritePermission() {
-		groups, err := s.permissionService.GroupList(sotID)
+		groups, err = s.permissionService.GroupList(sotID)
 		if err != nil {
 			return nil, err
 		}
+	}
 
-		authData.GroupAssignment = &contract.GroupAssignment{
-			ID:    userData.Permission.GroupID,
-			Items: groups,
-		}
+	authData.GroupAssignment = &contract.GroupAssignment{
+		ID:    userData.Permission.GroupID,
+		Items: groups,
 	}
 
 	return &authData, nil
@@ -137,13 +143,14 @@ func (s *Service) GroupAssignment(
 	authUser *entity.User,
 	sotID string,
 ) (*contract.GroupAssignment, error) {
-	if !authUser.HasWritePermission() {
-		return nil, ErrPermission
-	}
+	var groups []entity.PermissionGroup
 
-	groups, err := s.permissionService.GroupList(sotID)
-	if err != nil {
-		return nil, err
+	if authUser.HasWritePermission() {
+		var err error
+		groups, err = s.permissionService.GroupList(sotID)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &contract.GroupAssignment{

@@ -1,6 +1,7 @@
 package vault
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -82,10 +83,20 @@ func (r *repository) Update(
 	tx *gorm.DB,
 	vault *entity.Vault,
 ) *gorm.DB {
+	groupIDsJSON, err := json.Marshal(vault.GroupIDs)
+	if err != nil {
+		return &gorm.DB{
+			Error: err,
+		}
+	}
+
 	return tx.
 		Model(&entity.Vault{}).
 		Where("id = ?", vault.ID).
-		Update("name", vault.Name)
+		Updates(map[string]interface{}{
+			"name":      vault.Name,
+			"group_ids": string(groupIDsJSON),
+		})
 }
 
 func (r *repository) FirstOrCreate(

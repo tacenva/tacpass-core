@@ -301,17 +301,3 @@ func (s *Service) GroupList(sotID string) ([]entity.PermissionGroup, error) {
 func (s *Service) SyncGroups(sotID string, groups []entity.PermissionGroup) error {
 	return s.permissionService.SyncGroups(sotID, groups)
 }
-
-// func (s *Service) GroupAssignment(authUser *entity.User, sotID string) (*contract.GroupAssignment, error) {
-// 	response := contract.GroupAssignment{
-// 		ID: authUser.Permission.GroupID,
-// 	}
-// 	if authUser.HasWritePermission() {
-// 		groups, err := s.permissionService.GroupList(sotID)
-// 		if err != nil {
-// 			return nil, err
-// 		}
-// 		response.Items = groups
-// 	}
-// 	return &response, nil
-// }
