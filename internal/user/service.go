@@ -117,11 +117,11 @@ func (s *Service) Update(
 func (s *Service) UpdateStatus(
 	id string,
 	status entity.UserStatus,
-) (*entity.User, error) {
+) error {
 	id = strings.TrimSpace(id)
 
 	if id == "" {
-		return nil, ErrNotFound
+		return ErrNotFound
 	}
 
 	switch status {
@@ -130,25 +130,25 @@ func (s *Service) UpdateStatus(
 		entity.UserStatusRevoked:
 
 	default:
-		return nil, ErrStatusInvalid
+		return ErrStatusInvalid
 	}
 
 	user, err := s.repository.FindByID(id)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if user == nil {
-		return nil, ErrNotFound
+		return ErrNotFound
 	}
 
 	user.Status = status
 
 	if err := s.repository.Update(user); err != nil {
-		return nil, err
+		return err
 	}
 
-	return user, nil
+	return nil
 }
 
 func (s *Service) Delete(id string) error {

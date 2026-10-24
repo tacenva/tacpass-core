@@ -124,47 +124,24 @@ func (s *Service) UserList(
 	return permission.Users, nil
 }
 
-func (s *Service) ApproveUser(
-	authUser *entity.User,
-	userId string,
-	sotID string,
-) (*entity.User, error) {
-	permission, err := s.permissionService.GetPermissionByUserID(userId)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := s.hasGroupPermission(
-		authUser,
-		permission.GroupID,
-		sotID,
-	); err != nil {
-		return nil, err
-	}
-
-	return s.userService.UpdateStatus(
-		userId,
-		entity.UserStatusApproved,
-	)
-}
-
 func (s *Service) ApproveUserInternal(
 	userId string,
-) (*entity.User, error) {
+) error {
 	return s.userService.UpdateStatus(
 		userId,
 		entity.UserStatusApproved,
 	)
 }
 
-func (s *Service) RevokeUser(
+func (s *Service) SetUserStatus(
 	authUser *entity.User,
-	userId string,
 	sotID string,
-) (*entity.User, error) {
+	userId string,
+	status entity.UserStatus,
+) error {
 	permission, err := s.permissionService.GetPermissionByUserID(userId)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if err := s.hasGroupPermission(
@@ -172,12 +149,12 @@ func (s *Service) RevokeUser(
 		permission.GroupID,
 		sotID,
 	); err != nil {
-		return nil, err
+		return err
 	}
 
 	return s.userService.UpdateStatus(
 		userId,
-		entity.UserStatusRevoked,
+		status,
 	)
 }
 
@@ -233,42 +210,6 @@ func (s *Service) GetInternal(
 	return s.permissionService.GetPermission(id, sotID, true)
 }
 
-func (s *Service) UpdateGroup(
-	authUser *entity.User,
-	group *entity.PermissionGroup,
-	sotID string,
-) error {
-	if !authUser.HasAdminPermission() {
-		return ErrPermission
-	}
-
-	if err := s.hasGroupPermission(
-		authUser,
-		group.ID,
-		sotID,
-	); err != nil {
-		return err
-	}
-
-	return s.permissionService.UpdateGroup(group)
-}
-
-func (s *Service) DeleteGroup(
-	authUser *entity.User,
-	groupID string,
-	sotID string,
-) error {
-	if err := s.hasGroupPermission(
-		authUser,
-		groupID,
-		sotID,
-	); err != nil {
-		return err
-	}
-
-	return s.permissionService.DeleteGroup(groupID)
-}
-
 func (s *Service) hasGroupPermission(
 	authUser *entity.User,
 	groupID string,
@@ -292,12 +233,4 @@ func (s *Service) hasGroupPermission(
 	}
 
 	return nil
-}
-
-func (s *Service) GroupList(sotID string) ([]entity.PermissionGroup, error) {
-	return s.permissionService.GroupList(sotID)
-}
-
-func (s *Service) SyncGroups(sotID string, groups []entity.PermissionGroup) error {
-	return s.permissionService.SyncGroups(sotID, groups)
 }

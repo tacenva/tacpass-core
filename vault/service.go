@@ -293,15 +293,6 @@ func (s *Service) UpdateOnSot(
 			vault.GroupIDs,
 		)
 
-		log.Printf(
-			"[DEBUG] vault=%s oldGroupIDs=%s newGroupIDs=%s toCreate=%s toDelete=%s",
-			vault.ID,
-			mustJSON(oldVault.GroupIDs),
-			mustJSON(vault.GroupIDs),
-			mustJSON(toCreateIDs),
-			mustJSON(toDeleteIDs),
-		)
-
 		// Update data vault.
 		result := s.repository.Update(tx, vault)
 		if result.Error != nil {
@@ -567,11 +558,6 @@ func (s *Service) GetChangesAfterOnSot(
 		)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				log.Printf(
-					"[DEBUG] VaultAccess tidak ditemukan: vaultID=%s permissionID=%s",
-					vaultID,
-					permissionID,
-				)
 				continue
 			}
 
@@ -769,25 +755,9 @@ func (s *Service) ApplyChangeOnReplica(
 		if len(vaultChangeData.VaultAccessList) > 0 {
 			vaData := vaultChangeData.VaultAccessList[0]
 
-			debugJSON, err := json.MarshalIndent(vaData, "", "  ")
-			if err != nil {
-				log.Printf("[DEBUG] Marshal VaultAccess error: %v", err)
-			} else {
-				log.Printf("[DEBUG] VaultAccessList[0]:\n%s", string(debugJSON))
-			}
-
 			vault.WrappedKey = vaData.VaultKey
-
-			log.Printf(
-				"[DEBUG] WrappedKey assigned: vaultID=%s, wrappedKey=%s",
-				vault.ID,
-				vault.WrappedKey,
-			)
 		} else {
-			log.Printf(
-				"[DEBUG] VaultAccessList kosong: vaultID=%s",
-				vault.ID,
-			)
+			vault.WrappedKey = ""
 		}
 
 		switch change.Operation {
@@ -797,13 +767,6 @@ func (s *Service) ApplyChangeOnReplica(
 			}
 
 		case sync.OperationUpdate:
-			raw, err := json.Marshal(vault)
-			if err != nil {
-				return err
-			}
-
-			log.Printf("[DEBUG] Vault JSON before Update: %s", string(raw))
-
 			result := vaultFile.Update(&vault)
 			if result.Error != nil {
 				if errors.Is(result.Error, database.ErrRecordNotFound) {
@@ -811,10 +774,6 @@ func (s *Service) ApplyChangeOnReplica(
 				}
 				return result.Error
 			}
-
-			log.Printf("[DEBUG] Update result: ID=%s, Updated=%d",
-				result.ID, result.Updated,
-			)
 
 		case sync.OperationDelete:
 			if err := vaultFile.Delete(vaultID).Error; err != nil {

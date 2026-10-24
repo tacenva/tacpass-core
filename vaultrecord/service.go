@@ -43,7 +43,7 @@ func (s *Service) GetBlob(
 	vaultID string,
 	sotID string,
 ) ([]byte, error) {
-	if authUser == nil || authUser.ID == "" {
+	if !authUser.IsApproved() {
 		return nil, ErrForbidden
 	}
 
@@ -69,7 +69,7 @@ func (s *Service) StoreBlob(
 	sotID string,
 	data []byte,
 ) error {
-	if authUser == nil || authUser.ID == "" {
+	if !authUser.HasWritePermission() {
 		return ErrForbidden
 	}
 
@@ -110,7 +110,7 @@ func (s *Service) Init(
 	return err
 }
 
-func (s *Service) Create(
+func (s *Service) create(
 	vaultDir string,
 	vaultID string,
 	recordID *string,
@@ -160,7 +160,52 @@ func (s *Service) Create(
 	return nil
 }
 
-func (s *Service) Update(
+func (s *Service) CreateOnSot(
+	auth *entity.User,
+	vaultDir string,
+	vaultID string,
+	recordID *string,
+	data []byte,
+	sotID string,
+	lastChangeID *string,
+	hostname string,
+) error {
+	if !auth.HasWritePermission() {
+		return ErrForbidden
+	}
+
+	return s.create(
+		vaultDir,
+		vaultID,
+		recordID,
+		data,
+		sotID,
+		lastChangeID,
+		hostname,
+	)
+}
+
+func (s *Service) CreateOnReplica(
+	vaultDir string,
+	vaultID string,
+	recordID *string,
+	data []byte,
+	sotID string,
+	lastChangeID *string,
+	hostname string,
+) error {
+	return s.create(
+		vaultDir,
+		vaultID,
+		recordID,
+		data,
+		sotID,
+		lastChangeID,
+		hostname,
+	)
+}
+
+func (s *Service) update(
 	vaultDir string,
 	vaultID string,
 	recordID string,
@@ -213,6 +258,50 @@ func (s *Service) Update(
 	})
 }
 
+func (s *Service) UpdateOnSot(
+	auth *entity.User,
+	vaultDir string,
+	vaultID string,
+	recordID string,
+	data []byte,
+	sotID string,
+	lastChangeID *string,
+	hostname string,
+) error {
+	if !auth.HasWritePermission() {
+		return ErrForbidden
+	}
+	return s.update(
+		vaultDir,
+		vaultID,
+		recordID,
+		data,
+		sotID,
+		lastChangeID,
+		hostname,
+	)
+}
+
+func (s *Service) UpdateOnReplica(
+	vaultDir string,
+	vaultID string,
+	recordID string,
+	data []byte,
+	sotID string,
+	lastChangeID *string,
+	hostname string,
+) error {
+	return s.update(
+		vaultDir,
+		vaultID,
+		recordID,
+		data,
+		sotID,
+		lastChangeID,
+		hostname,
+	)
+}
+
 func (s *Service) Destroy(
 	vaultDir string,
 	vaultID string,
@@ -232,7 +321,7 @@ func (s *Service) Destroy(
 	return err
 }
 
-func (s *Service) Delete(
+func (s *Service) delete(
 	vaultDir string,
 	vaultID string,
 	recordID string,
@@ -275,6 +364,47 @@ func (s *Service) Delete(
 			hostname,
 		)
 	})
+}
+
+func (s *Service) DeleteOnSot(
+	auth *entity.User,
+	vaultDir string,
+	vaultID string,
+	recordID string,
+	sotID string,
+	lastChangeID *string,
+	hostname string,
+) error {
+	if !auth.HasWritePermission() {
+		return ErrForbidden
+	}
+
+	return s.delete(
+		vaultDir,
+		vaultID,
+		recordID,
+		sotID,
+		lastChangeID,
+		hostname,
+	)
+}
+
+func (s *Service) DeleteOnReplica(
+	vaultDir string,
+	vaultID string,
+	recordID string,
+	sotID string,
+	lastChangeID *string,
+	hostname string,
+) error {
+	return s.delete(
+		vaultDir,
+		vaultID,
+		recordID,
+		sotID,
+		lastChangeID,
+		hostname,
+	)
 }
 
 func (s *Service) getEntityName(

@@ -229,26 +229,6 @@ func (r *repository) SetRevoked(id string, revoked bool) error {
 	return nil
 }
 
-// func (r *repository) Find(id string) (*entity.Permission, error) {
-// 	var permission entity.Permission
-
-// 	err := r.db.
-// 		Preload("Users").
-// 		Where("id = ?", id).
-// 		First(&permission).
-// 		Error
-
-// 	if errors.Is(err, gorm.ErrRecordNotFound) {
-// 		return nil, nil
-// 	}
-
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	return &permission, nil
-// }
-
 func (r *repository) FindAdmin() (*entity.Permission, error) {
 	var permission entity.Permission
 

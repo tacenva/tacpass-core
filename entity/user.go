@@ -46,6 +46,10 @@ func (u *User) HasAdminPermission() bool {
 	}
 }
 
+func (u *User) IsApproved() bool {
+	return u.Status == UserStatusApproved
+}
+
 func (u *User) BeforeCreate(tx *gorm.DB) error {
 	if u.ID == "" {
 		u.ID = ulid.Make().String()
