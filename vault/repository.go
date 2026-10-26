@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	tacenvaentity "github.com/tacenva/tacenva-core/entity"
 	"github.com/tacenva/tacpass-core/entity"
 	"gorm.io/gorm"
 )
@@ -122,8 +123,8 @@ func (r *repository) Delete(
 		Error
 }
 
-func (r *repository) ListPermissionGroup(sotID string) ([]entity.PermissionGroup, error) {
-	var groups []entity.PermissionGroup
+func (r *repository) ListPermissionGroup(sotID string) ([]tacenvaentity.PermissionGroup, error) {
+	var groups []tacenvaentity.PermissionGroup
 
 	if sotID == "" {
 		return nil, fmt.Errorf("SOT ID is required")

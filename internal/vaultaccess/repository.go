@@ -1,6 +1,7 @@
 package vaultaccess
 
 import (
+	tacenvaentity "github.com/tacenva/tacenva-core/entity"
 	"github.com/tacenva/tacpass-core/entity"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -167,7 +168,7 @@ func (r *repository) DeleteBulkByGroupIDsTx(
 	}
 
 	permissionIDs := tx.
-		Model(&entity.Permission{}).
+		Model(&tacenvaentity.Permission{}).
 		Select("id").
 		Where("group_id IN ?", groupIDs)
 
@@ -229,6 +230,6 @@ func (r *repository) DeleteMissing(
 	}
 	return tx.
 		Where("id NOT IN ?", incomingIDs).
-		Delete(&entity.PermissionGroup{}).
+		Delete(&tacenvaentity.PermissionGroup{}).
 		Error
 }

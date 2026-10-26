@@ -2,6 +2,7 @@ package entity
 
 import (
 	"github.com/oklog/ulid/v2"
+	tacenvaentity "github.com/tacenva/tacenva-core/entity"
 	"gorm.io/gorm"
 )
 
@@ -11,8 +12,8 @@ type VaultAccess struct {
 	PermissionID string `json:"permission_id,omitempty" gorm:"type:varchar(26);not null;uniqueIndex:idx_vault_permission"`
 	VaultKey     string `json:"vault_key,omitempty" gorm:"type:text;not null"`
 
-	Vault      Vault      `json:"vault,omitempty" gorm:"foreignKey:VaultID;references:ID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE"`
-	Permission Permission `json:"-" gorm:"foreignKey:PermissionID;references:ID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE"`
+	Vault      Vault                    `json:"vault,omitempty" gorm:"foreignKey:VaultID;references:ID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE"`
+	Permission tacenvaentity.Permission `json:"-" gorm:"foreignKey:PermissionID;references:ID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE"`
 }
 
 func (p *VaultAccess) BeforeCreate(tx *gorm.DB) error {

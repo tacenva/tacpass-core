@@ -9,13 +9,14 @@ import (
 
 	"github.com/oklog/ulid/v2"
 	"github.com/tacenva/database"
+	tacenvaentity "github.com/tacenva/tacenva-core/entity"
+	"github.com/tacenva/tacenva-core/permission"
+	"github.com/tacenva/tacenva-core/sync"
+	"github.com/tacenva/tacenva-core/util/credential"
+	"github.com/tacenva/tacenva-core/util/keyring"
 	"github.com/tacenva/tacpass-core/contract"
 	"github.com/tacenva/tacpass-core/entity"
-	"github.com/tacenva/tacpass-core/internal/permission"
-	"github.com/tacenva/tacpass-core/internal/sync"
 	"github.com/tacenva/tacpass-core/internal/vaultaccess"
-	"github.com/tacenva/tacpass-core/util/credential"
-	"github.com/tacenva/tacpass-core/util/keyring"
 	"github.com/tacenva/tacpass-core/vaultrecord"
 	"gorm.io/gorm"
 )
@@ -62,7 +63,7 @@ func (s *Service) GetVaultRecordService() *vaultrecord.Service {
 }
 
 func (s *Service) VaultList(
-	authUser *entity.User,
+	authUser *tacenvaentity.User,
 ) ([]entity.Vault, error) {
 	if authUser == nil {
 		return nil, ErrPermission
@@ -79,10 +80,10 @@ func (s *Service) VaultList(
 }
 
 func (s *Service) GetPublicKeysByGroupIDs(
-	authUser *entity.User,
+	authUser *tacenvaentity.User,
 	groupIDs []string,
 	sotID string,
-) (map[string][]entity.Permission, error) {
+) (map[string][]tacenvaentity.Permission, error) {
 	if authUser == nil || !authUser.HasWritePermission() {
 		return nil, ErrPermission
 	}
@@ -90,13 +91,13 @@ func (s *Service) GetPublicKeysByGroupIDs(
 	return s.permissionService.GetPublicKeysByGroupIDs(groupIDs, sotID)
 }
 
-func (s *Service) ListPermissionGroup(sotID string) ([]entity.PermissionGroup, error) {
+func (s *Service) ListPermissionGroup(sotID string) ([]tacenvaentity.PermissionGroup, error) {
 	sotID = strings.TrimSpace(sotID)
 	return s.repository.ListPermissionGroup(sotID)
 }
 
 func (s *Service) ToGroupIDs(
-	permissionGroups []entity.PermissionGroup,
+	permissionGroups []tacenvaentity.PermissionGroup,
 ) []string {
 	groupIDs := make([]string, len(permissionGroups))
 	for _, group := range permissionGroups {
@@ -106,7 +107,7 @@ func (s *Service) ToGroupIDs(
 }
 
 func (s *Service) CreateOnSot(
-	authUser *entity.User,
+	authUser *tacenvaentity.User,
 	vaultDir string,
 	vault *entity.Vault,
 	sotID string,
@@ -167,7 +168,7 @@ func (s *Service) CreateOnSot(
 			lastChangeID,
 			syncEntityVault,
 			vault.ID,
-			sync.OperationCreate,
+			tacenvaentity.OperationCreate,
 			sotID,
 			authUser.Hostname,
 		); err != nil {
@@ -215,7 +216,7 @@ func (s *Service) CreateOnReplica(
 		lastChangeID,
 		syncEntityVault,
 		vault.ID,
-		sync.OperationCreate,
+		tacenvaentity.OperationCreate,
 		sotID,
 		"",
 	); err != nil {
@@ -256,7 +257,7 @@ func diffIDs(oldIDs, newIDs []string) (toCreate, toDelete []string) {
 }
 
 func (s *Service) UpdateOnSot(
-	authUser *entity.User,
+	authUser *tacenvaentity.User,
 	vault *entity.Vault,
 	sotID string,
 	lastChangeID *string,
@@ -353,7 +354,7 @@ func (s *Service) UpdateOnSot(
 			lastChangeID,
 			syncEntityVault,
 			vault.ID,
-			sync.OperationUpdate,
+			tacenvaentity.OperationUpdate,
 			sotID,
 			authUser.Hostname,
 		)
@@ -395,7 +396,7 @@ func (s *Service) UpdateOnReplica(
 		lastChangeID,
 		syncEntityVault,
 		vault.ID,
-		sync.OperationUpdate,
+		tacenvaentity.OperationUpdate,
 		sotID,
 		"",
 	); err != nil {
@@ -406,7 +407,7 @@ func (s *Service) UpdateOnReplica(
 }
 
 func (s *Service) DeleteOnSot(
-	authUser *entity.User,
+	authUser *tacenvaentity.User,
 	vaultDir string,
 	id string,
 	sotID string,
@@ -444,7 +445,7 @@ func (s *Service) DeleteOnSot(
 			lastChangeID,
 			syncEntityVault,
 			vault.ID,
-			sync.OperationDelete,
+			tacenvaentity.OperationDelete,
 			sotID,
 			authUser.Hostname,
 		); err != nil {
@@ -484,7 +485,7 @@ func (s *Service) DeleteOnReplica(
 		lastChangeID,
 		syncEntityVault,
 		vaultID,
-		sync.OperationDelete,
+		tacenvaentity.OperationDelete,
 		sotID,
 		"",
 	); err != nil {
@@ -593,7 +594,7 @@ func (s *Service) GetChangesAfterOnReplica(
 	vaultChangeDataList := make(map[string]contract.VaultChangeData)
 
 	for _, change := range changes {
-		if change.Operation != sync.OperationDelete {
+		if change.Operation != tacenvaentity.OperationDelete {
 			var vaultFound entity.Vault
 
 			err := dbFile.FindFirstWhere(
@@ -656,7 +657,7 @@ func (s *Service) MergePendingVaultChange(
 		return nil
 	}
 
-	var compChanges []sync.SyncChange
+	var compChanges []tacenvaentity.SyncChange
 	var compData map[string]contract.VaultChangeData
 
 	if comp != nil {
@@ -691,7 +692,7 @@ func (s *Service) applyChangeOnSot(
 			vaultChangeData, exist := vaultChange.VaultChangeDataList[vaultID]
 
 			switch change.Operation {
-			case sync.OperationCreate:
+			case tacenvaentity.OperationCreate:
 				if !exist {
 					continue
 				}
@@ -704,7 +705,7 @@ func (s *Service) applyChangeOnSot(
 					return err
 				}
 
-			case sync.OperationUpdate:
+			case tacenvaentity.OperationUpdate:
 				if !exist {
 					continue
 				}
@@ -717,7 +718,7 @@ func (s *Service) applyChangeOnSot(
 					return err
 				}
 
-			case sync.OperationDelete:
+			case tacenvaentity.OperationDelete:
 				if err := s.repository.Delete(tx, vaultID); err != nil {
 					return err
 				}
@@ -761,12 +762,12 @@ func (s *Service) ApplyChangeOnReplica(
 		}
 
 		switch change.Operation {
-		case sync.OperationCreate:
+		case tacenvaentity.OperationCreate:
 			if err := vaultFile.Insert(&vault).Error; err != nil {
 				return err
 			}
 
-		case sync.OperationUpdate:
+		case tacenvaentity.OperationUpdate:
 			result := vaultFile.Update(&vault)
 			if result.Error != nil {
 				if errors.Is(result.Error, database.ErrRecordNotFound) {
@@ -775,7 +776,7 @@ func (s *Service) ApplyChangeOnReplica(
 				return result.Error
 			}
 
-		case sync.OperationDelete:
+		case tacenvaentity.OperationDelete:
 			if err := vaultFile.Delete(vaultID).Error; err != nil {
 				if errors.Is(err, database.ErrRecordNotFound) {
 					continue
@@ -796,7 +797,7 @@ func (s *Service) ApplyChangeOnReplica(
 
 func (s *Service) insertSyncChanges(
 	sotID string,
-	syncChanges []sync.SyncChange,
+	syncChanges []tacenvaentity.SyncChange,
 ) error {
 	if len(syncChanges) == 0 {
 		return nil
@@ -900,7 +901,7 @@ func (s *Service) ValidateGroupOnSot(
 	changes *contract.PendingVaultChange,
 ) (allowed *contract.PendingVaultChange, err error) {
 	allowed = &contract.PendingVaultChange{
-		SyncChanges:         make([]sync.SyncChange, 0),
+		SyncChanges:         make([]tacenvaentity.SyncChange, 0),
 		VaultChangeDataList: make(map[string]contract.VaultChangeData),
 	}
 
@@ -921,7 +922,7 @@ func (s *Service) ValidateGroupOnSot(
 				continue
 			}
 
-			if syncChange.Operation == sync.OperationCreate {
+			if syncChange.Operation == tacenvaentity.OperationCreate {
 				allowed.SyncChanges = append(
 					allowed.SyncChanges,
 					syncChange,

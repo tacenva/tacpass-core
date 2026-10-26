@@ -7,9 +7,10 @@ import (
 	"strings"
 
 	"github.com/tacenva/database"
+	tacenvaentity "github.com/tacenva/tacenva-core/entity"
+	"github.com/tacenva/tacenva-core/sync"
 	"github.com/tacenva/tacpass-core/contract"
 	"github.com/tacenva/tacpass-core/entity"
-	"github.com/tacenva/tacpass-core/internal/sync"
 	"gorm.io/gorm"
 )
 
@@ -38,7 +39,7 @@ func NewService(
 }
 
 func (s *Service) GetBlob(
-	authUser *entity.User,
+	authUser *tacenvaentity.User,
 	vaultDir string,
 	vaultID string,
 	sotID string,
@@ -63,7 +64,7 @@ func (s *Service) GetBlob(
 }
 
 func (s *Service) StoreBlob(
-	authUser *entity.User,
+	authUser *tacenvaentity.User,
 	vaultDir string,
 	vaultID string,
 	sotID string,
@@ -148,7 +149,7 @@ func (s *Service) create(
 			lastChangeID,
 			entityName,
 			*recordID,
-			sync.OperationCreate,
+			tacenvaentity.OperationCreate,
 			sotID,
 			hostname,
 		)
@@ -161,7 +162,7 @@ func (s *Service) create(
 }
 
 func (s *Service) CreateOnSot(
-	auth *entity.User,
+	auth *tacenvaentity.User,
 	vaultDir string,
 	vaultID string,
 	recordID *string,
@@ -251,7 +252,7 @@ func (s *Service) update(
 			lastChangeID,
 			entityName,
 			recordID,
-			sync.OperationUpdate,
+			tacenvaentity.OperationUpdate,
 			sotID,
 			hostname,
 		)
@@ -259,7 +260,7 @@ func (s *Service) update(
 }
 
 func (s *Service) UpdateOnSot(
-	auth *entity.User,
+	auth *tacenvaentity.User,
 	vaultDir string,
 	vaultID string,
 	recordID string,
@@ -359,7 +360,7 @@ func (s *Service) delete(
 			lastChangeID,
 			entityName,
 			recordID,
-			sync.OperationDelete,
+			tacenvaentity.OperationDelete,
 			sotID,
 			hostname,
 		)
@@ -367,7 +368,7 @@ func (s *Service) delete(
 }
 
 func (s *Service) DeleteOnSot(
-	auth *entity.User,
+	auth *tacenvaentity.User,
 	vaultDir string,
 	vaultID string,
 	recordID string,
@@ -547,7 +548,7 @@ func (s *Service) MergePendingVaultRecordChange(
 		return nil
 	}
 
-	var compChanges []sync.SyncChange
+	var compChanges []tacenvaentity.SyncChange
 	var compData map[string][]byte
 
 	if comp != nil {
@@ -589,13 +590,13 @@ func (s *Service) applyChange(
 		recordID := change.EntityID
 		encryptedRecord := recordChange.EncryptedRecords[recordID]
 		switch change.Operation {
-		case sync.OperationCreate:
+		case tacenvaentity.OperationCreate:
 			err := fileDB.InsertRaw(&recordID, encryptedRecord)
 			if err != nil {
 				return err
 			}
 
-		case sync.OperationUpdate:
+		case tacenvaentity.OperationUpdate:
 			err := fileDB.UpdateRaw(recordID, encryptedRecord)
 			if err != nil {
 				if !errors.Is(err, database.ErrRecordNotFound) {
@@ -603,7 +604,7 @@ func (s *Service) applyChange(
 				}
 			}
 
-		case sync.OperationDelete:
+		case tacenvaentity.OperationDelete:
 			err := fileDB.DeleteRaw(recordID)
 			if err != nil {
 				if !errors.Is(err, database.ErrRecordNotFound) {
@@ -619,7 +620,7 @@ func (s *Service) applyChange(
 func (s *Service) insertSyncChanges(
 	sotID string,
 	vaultID string,
-	syncChanges []sync.SyncChange,
+	syncChanges []tacenvaentity.SyncChange,
 ) error {
 	if len(syncChanges) == 0 {
 		return nil
@@ -663,7 +664,7 @@ func (s *Service) SyncOnReplica(
 }
 
 func (s *Service) SyncOnSot(
-	authUser *entity.User,
+	authUser *tacenvaentity.User,
 	vaultDir string,
 	sotID string,
 	vaultID string,

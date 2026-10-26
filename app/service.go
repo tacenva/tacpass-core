@@ -2,11 +2,9 @@ package app
 
 import (
 	"github.com/tacenva/database"
-	"github.com/tacenva/tacpass-core/accesscontrol"
-	"github.com/tacenva/tacpass-core/auth"
-	"github.com/tacenva/tacpass-core/internal/permission"
-	"github.com/tacenva/tacpass-core/internal/sync"
-	"github.com/tacenva/tacpass-core/internal/user"
+	"github.com/tacenva/tacenva-core/accesscontrol"
+	tacenvaapp "github.com/tacenva/tacenva-core/app"
+	"github.com/tacenva/tacenva-core/auth"
 	"github.com/tacenva/tacpass-core/internal/vaultaccess"
 	"github.com/tacenva/tacpass-core/vault"
 	"github.com/tacenva/tacpass-core/vaultrecord"
@@ -25,44 +23,27 @@ func NewServices(
 	sqliteDB *gorm.DB,
 	tacenvaDB *database.DB,
 ) *Services {
-	userService := user.NewService(
-		user.NewRepository(sqliteDB),
-	)
-
-	permissionService := permission.NewService(
-		permission.NewRepository(sqliteDB),
+	tacenvaService := tacenvaapp.NewServices(
+		sqliteDB,
+		tacenvaDB,
 	)
 
 	vaultAccessService := vaultaccess.NewService(
 		vaultaccess.NewRepository(sqliteDB),
 	)
 
-	syncService := sync.NewService(
-		sqliteDB,
-		userService,
-	)
 	vaultService := vault.NewService(
 		vault.NewRepository(sqliteDB),
 		vaultAccessService,
-		permissionService,
-		syncService,
+		tacenvaService.Permission,
+		tacenvaService.SyncService,
 	)
 
 	vaultRecordService := vaultService.GetVaultRecordService()
 
-	accessControlService := accesscontrol.NewService(
-		userService,
-		permissionService,
-	)
-
-	authService := auth.NewService(
-		userService,
-		permissionService,
-	)
-
 	return &Services{
-		Auth:          authService,
-		AccessControl: accessControlService,
+		Auth:          tacenvaService.Auth,
+		AccessControl: tacenvaService.AccessControl,
 		Vault:         vaultService,
 		VaultAccess:   vaultAccessService,
 		VaultRecord:   vaultRecordService,

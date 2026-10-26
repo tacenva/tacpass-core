@@ -1,8 +1,8 @@
 package app
 
 import (
+	tacenvaapp "github.com/tacenva/tacenva-core/app"
 	"github.com/tacenva/tacpass-core/entity"
-	"github.com/tacenva/tacpass-core/internal/sync"
 	"gorm.io/gorm"
 )
 
@@ -11,15 +11,10 @@ func Migrate(db *gorm.DB) error {
 		return err
 	}
 
+	tacenvaapp.Migrate(db)
+
 	return db.AutoMigrate(
-		&entity.Permission{},
-		&entity.PermissionGroup{},
-		&entity.PermissionGroupHierarchy{},
-		&entity.User{},
 		&entity.Vault{},
 		&entity.VaultAccess{},
-
-		&sync.SyncChange{},
-		&sync.SyncState{},
 	)
 }
