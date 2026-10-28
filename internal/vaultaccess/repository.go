@@ -3,6 +3,7 @@ package vaultaccess
 import (
 	tacenvaentity "github.com/tacenva/tacenva-core/entity"
 	"github.com/tacenva/tacpass-core/entity"
+	tacpassentity "github.com/tacenva/tacpass-core/entity"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -44,7 +45,7 @@ func (r *repository) CreateBulk(
 
 func (r *repository) CreateBulkTx(
 	tx *gorm.DB,
-	vaultAccesses []*entity.VaultAccess,
+	vaultAccesses []entity.VaultAccess,
 ) error {
 	if len(vaultAccesses) == 0 {
 		return nil
@@ -53,75 +54,6 @@ func (r *repository) CreateBulkTx(
 	return tx.
 		CreateInBatches(vaultAccesses, 100).
 		Error
-}
-
-func (r *repository) FindByPermissionID(
-	permissionId string,
-) (*entity.VaultAccess, error) {
-	var vaultAccess entity.VaultAccess
-
-	err := r.db.
-		First(&vaultAccess, "permission_id = ?", permissionId).
-		Error
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &vaultAccess, nil
-}
-
-func (r *repository) FindByVaultID(
-	vaultID string,
-) ([]entity.VaultAccess, error) {
-	var values []entity.VaultAccess
-
-	err := r.db.
-		Where("vault_id = ?", vaultID).
-		Find(&values).
-		Error
-
-	if err != nil {
-		return nil, err
-	}
-
-	return values, nil
-}
-
-func (r *repository) FindByVaultAndPermission(
-	vaultID string,
-	permissionID string,
-) (*entity.VaultAccess, error) {
-	var vaultAccess entity.VaultAccess
-
-	err := r.db.
-		Where(
-			"vault_id = ? AND permission_id = ?",
-			vaultID,
-			permissionID,
-		).
-		First(&vaultAccess).
-		Error
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &vaultAccess, nil
-}
-
-func (r *repository) FindAll() ([]entity.VaultAccess, error) {
-	var vaultAccesses []entity.VaultAccess
-
-	err := r.db.
-		Find(&vaultAccesses).
-		Error
-
-	if err != nil {
-		return nil, err
-	}
-
-	return vaultAccesses, nil
 }
 
 func (r *repository) Update(
@@ -150,38 +82,16 @@ func (r *repository) Delete(id string) error {
 
 func (r *repository) DeleteBulkTx(
 	tx *gorm.DB,
-	vaultAccesses []*entity.VaultAccess,
+	vaultID string,
+	toDelete []string,
 ) error {
-	if len(vaultAccesses) == 0 {
+	if len(toDelete) == 0 {
 		return nil
 	}
-
-	return tx.Delete(vaultAccesses).Error
-}
-
-func (r *repository) DeleteBulkByGroupIDsTx(
-	tx *gorm.DB,
-	groupIDs []string,
-) error {
-	if len(groupIDs) == 0 {
-		return nil
-	}
-
-	permissionIDs := tx.
-		Model(&tacenvaentity.Permission{}).
-		Select("id").
-		Where("group_id IN ?", groupIDs)
 
 	return tx.
-		Where("permission_id IN (?)", permissionIDs).
-		Delete(&entity.VaultAccess{}).
-		Error
-}
-
-func (r *repository) Transaction(
-	fn func(tx *gorm.DB) error,
-) error {
-	return r.db.Transaction(fn)
+		Where("vault_id = ? AND access_group_id IN ?", vaultID, toDelete).
+		Delete(&tacpassentity.VaultAccess{}).Error
 }
 
 func (r *repository) Upsert(
@@ -213,7 +123,7 @@ func (r *repository) Upsert(
 			},
 			DoUpdates: clause.AssignmentColumns([]string{
 				"vault_id",
-				"permission_id",
+				"access_unit_id",
 				"vault_key",
 			}),
 		}).
@@ -230,6 +140,38 @@ func (r *repository) DeleteMissing(
 	}
 	return tx.
 		Where("id NOT IN ?", incomingIDs).
-		Delete(&tacenvaentity.PermissionGroup{}).
+		Delete(&tacenvaentity.AccessGroup{}).
 		Error
+}
+
+func (r *repository) FindByVaultAndAccessGroup(
+	vaultID string,
+	accessGroupID string,
+) (*tacpassentity.VaultAccess, error) {
+	var result tacpassentity.VaultAccess
+
+	err := r.db.
+		Where("vault_id = ? AND access_group_id = ?", vaultID, accessGroupID).
+		First(&result).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func (r *repository) FindByVault(
+	tx *gorm.DB,
+	vaultID string,
+) ([]tacpassentity.VaultAccess, error) {
+	var result []tacpassentity.VaultAccess
+
+	err := tx.
+		Where("vault_id = ?", vaultID).
+		Find(&result).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }

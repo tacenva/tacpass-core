@@ -3,9 +3,7 @@ package vault
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 
-	tacenvaentity "github.com/tacenva/tacenva-core/entity"
 	"github.com/tacenva/tacpass-core/entity"
 	"gorm.io/gorm"
 )
@@ -31,6 +29,16 @@ func (r *repository) Create(
 	vault *entity.Vault,
 ) error {
 	return tx.Create(vault).Error
+}
+
+func (r *repository) CreateBulk(
+	tx *gorm.DB,
+	vaults []entity.Vault,
+) error {
+	if len(vaults) == 0 {
+		return nil
+	}
+	return tx.CreateInBatches(vaults, 1000).Error
 }
 
 func (r *repository) FindByID(
@@ -100,19 +108,6 @@ func (r *repository) Update(
 		})
 }
 
-func (r *repository) FirstOrCreate(
-	tx *gorm.DB,
-	vault *entity.Vault,
-) error {
-	return tx.
-		Where("id = ?", vault.ID).
-		Assign(map[string]any{
-			"name": vault.Name,
-		}).
-		FirstOrCreate(vault).
-		Error
-}
-
 func (r *repository) Delete(
 	tx *gorm.DB,
 	id string,
@@ -121,24 +116,6 @@ func (r *repository) Delete(
 		Where("id = ?", id).
 		Delete(&entity.Vault{}).
 		Error
-}
-
-func (r *repository) ListPermissionGroup(sotID string) ([]tacenvaentity.PermissionGroup, error) {
-	var groups []tacenvaentity.PermissionGroup
-
-	if sotID == "" {
-		return nil, fmt.Errorf("SOT ID is required")
-	}
-
-	err := r.db.
-		Where("sot_id = ?", sotID).
-		Order("id ASC").
-		Find(&groups).Error
-	if err != nil {
-		return nil, err
-	}
-
-	return groups, nil
 }
 
 func (r *repository) IsAllowedToChange(

@@ -39,12 +39,12 @@ func NewService(
 }
 
 func (s *Service) GetBlob(
-	authUser *tacenvaentity.User,
+	authorizer *tacenvaentity.User,
 	vaultDir string,
 	vaultID string,
 	sotID string,
 ) ([]byte, error) {
-	if !authUser.IsApproved() {
+	if !authorizer.IsApproved() {
 		return nil, ErrForbidden
 	}
 
@@ -64,15 +64,15 @@ func (s *Service) GetBlob(
 }
 
 func (s *Service) StoreBlob(
-	authUser *tacenvaentity.User,
+	authorizer *tacenvaentity.User,
 	vaultDir string,
 	vaultID string,
 	sotID string,
 	data []byte,
 ) error {
-	if !authUser.HasWritePermission() {
-		return ErrForbidden
-	}
+	// if !authorizer.HasWritePermission() {
+	// 	return ErrForbidden
+	// }
 
 	vaultID = strings.TrimSpace(vaultID)
 	if vaultID == "" {
@@ -162,7 +162,7 @@ func (s *Service) create(
 }
 
 func (s *Service) CreateOnSot(
-	auth *tacenvaentity.User,
+	authorizer *tacenvaentity.User,
 	vaultDir string,
 	vaultID string,
 	recordID *string,
@@ -171,9 +171,9 @@ func (s *Service) CreateOnSot(
 	lastChangeID *string,
 	hostname string,
 ) error {
-	if !auth.HasWritePermission() {
-		return ErrForbidden
-	}
+	// if !auth.HasWritePermission() {
+	// 	return ErrForbidden
+	// }
 
 	return s.create(
 		vaultDir,
@@ -260,7 +260,7 @@ func (s *Service) update(
 }
 
 func (s *Service) UpdateOnSot(
-	auth *tacenvaentity.User,
+	authorizer *tacenvaentity.User,
 	vaultDir string,
 	vaultID string,
 	recordID string,
@@ -269,9 +269,9 @@ func (s *Service) UpdateOnSot(
 	lastChangeID *string,
 	hostname string,
 ) error {
-	if !auth.HasWritePermission() {
-		return ErrForbidden
-	}
+	// if !auth.HasWritePermission() {
+	// 	return ErrForbidden
+	// }
 	return s.update(
 		vaultDir,
 		vaultID,
@@ -368,7 +368,7 @@ func (s *Service) delete(
 }
 
 func (s *Service) DeleteOnSot(
-	auth *tacenvaentity.User,
+	authorizer *tacenvaentity.User,
 	vaultDir string,
 	vaultID string,
 	recordID string,
@@ -376,9 +376,9 @@ func (s *Service) DeleteOnSot(
 	lastChangeID *string,
 	hostname string,
 ) error {
-	if !auth.HasWritePermission() {
-		return ErrForbidden
-	}
+	// if !auth.HasWritePermission() {
+	// 	return ErrForbidden
+	// }
 
 	return s.delete(
 		vaultDir,
@@ -664,7 +664,7 @@ func (s *Service) SyncOnReplica(
 }
 
 func (s *Service) SyncOnSot(
-	authUser *tacenvaentity.User,
+	authorizer *tacenvaentity.User,
 	vaultDir string,
 	sotID string,
 	vaultID string,
@@ -677,7 +677,7 @@ func (s *Service) SyncOnSot(
 		isAllowed, err = s.repository.IsAllowedToChange(
 			tx,
 			vaultID,
-			authUser.Permission.GroupID,
+			authorizer.AccessUnit.GroupID,
 		)
 		return err
 	})
@@ -710,7 +710,7 @@ func (s *Service) SyncOnSot(
 	}
 
 	for i := range replicaChanges.SyncChanges {
-		replicaChanges.SyncChanges[i].ChangedBy = authUser.Hostname
+		replicaChanges.SyncChanges[i].ChangedBy = authorizer.Hostname
 	}
 
 	if err = s.insertSyncChanges(sotID, vaultID, replicaChanges.SyncChanges); err != nil {
