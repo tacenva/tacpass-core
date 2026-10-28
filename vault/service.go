@@ -3,6 +3,7 @@ package vault
 import (
 	"errors"
 
+	tacenvaentity "github.com/tacenva/tacenva-core/entity"
 	"github.com/tacenva/tacenva-core/sync"
 	"github.com/tacenva/tacpass-core/contract"
 	"github.com/tacenva/tacpass-core/internal/vaultaccess"
@@ -105,4 +106,12 @@ func (s *Service) SetSyncStateToBeLastest(
 			syncEntityVault,
 		)
 	})
+}
+
+func (s *Service) AllAccessGroup(
+	sotID string,
+) ([]tacenvaentity.AccessGroup, error) {
+	return s.vaultaccessService.AllAccessGroup(
+		sotID,
+	)
 }

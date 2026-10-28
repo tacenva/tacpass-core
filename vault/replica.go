@@ -20,6 +20,9 @@ import (
 type ReplicaService struct {
 	vaultRecordService *vaultrecord.Service
 	syncService        *sync.Service
+
+	vaultDir  *string
+	vaultFile *database.DatabaseFile
 }
 
 func NewReplicaService(
@@ -32,14 +35,25 @@ func NewReplicaService(
 	}
 }
 
+func (s *ReplicaService) SetConfig(vaultDir, masterKey string) error {
+	db := database.New(vaultDir)
+	vaultFile, err := db.File("vault", masterKey, database.FileModeOpenOrCreate)
+	if err != nil {
+		return err
+	}
+
+	s.vaultDir = &vaultDir
+	s.vaultFile = vaultFile
+
+	return nil
+}
+
 func (s *ReplicaService) Create(
-	vaultDir string,
 	vault *tacpassentity.Vault,
 	sotID string,
 	lastChangeID *string,
-	dbFile *database.DatabaseFile,
 
-	keypair *keyring.KeyPair,
+	keyPairOfAccessGroup *keyring.KeyPair,
 ) error {
 	vault.Name = strings.TrimSpace(vault.Name)
 	if vault.Name == "" {
@@ -55,11 +69,10 @@ func (s *ReplicaService) Create(
 		vault.ID = ulid.Make().String()
 	}
 
-	keyPair := keyring.FromPublicKey(keypair.PublicKey)
-	wrappedVaultKey, err := keyPair.Seal([]byte(vaultKey))
+	wrappedVaultKey, err := keyPairOfAccessGroup.Seal([]byte(vaultKey))
 	vault.WrappedKey = wrappedVaultKey
 
-	if err := dbFile.Insert(vault).Error; err != nil {
+	if err := s.vaultFile.Insert(vault).Error; err != nil {
 		return err
 	}
 
@@ -73,19 +86,17 @@ func (s *ReplicaService) Create(
 	); err != nil {
 		return err
 	}
-	if err := s.vaultRecordService.Init(vaultDir, vault.ID, vaultKey); err != nil {
+	if err := s.vaultRecordService.Local.Init(vault.ID, vaultKey); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (s *Service) Update(
+func (s *ReplicaService) Update(
 	vault *tacpassentity.Vault,
 	sotID string,
 	lastChangeID *string,
-
-	dbFile *database.DatabaseFile,
 ) error {
 	vault.ID = strings.TrimSpace(vault.ID)
 	vault.Name = strings.TrimSpace(vault.Name)
@@ -98,7 +109,7 @@ func (s *Service) Update(
 		return ErrNameEmpty
 	}
 
-	result := dbFile.Update(vault)
+	result := s.vaultFile.Update(vault)
 	if result.Error != nil {
 		return result.Error
 	}
@@ -118,12 +129,9 @@ func (s *Service) Update(
 }
 
 func (s *ReplicaService) Delete(
-	vaultDir string,
 	vaultID string,
 	sotID string,
 	lastChangeID *string,
-
-	dbFile *database.DatabaseFile,
 ) error {
 	vaultID = strings.TrimSpace(vaultID)
 
@@ -131,7 +139,7 @@ func (s *ReplicaService) Delete(
 		return ErrNotFound
 	}
 
-	if err := dbFile.Delete(vaultID).Error; err != nil {
+	if err := s.vaultFile.Delete(vaultID).Error; err != nil {
 		return err
 	}
 
@@ -147,7 +155,7 @@ func (s *ReplicaService) Delete(
 	}
 
 	if err := s.vaultRecordService.Destroy(
-		vaultDir,
+		*s.vaultDir,
 		vaultID,
 	); err != nil {
 		return err
@@ -157,29 +165,35 @@ func (s *ReplicaService) Delete(
 }
 
 func (s *ReplicaService) List(
-	vaultDir,
-	vaultID string,
-	vaultKey string,
+	groupID string,
 ) ([]tacpassentity.Vault, error) {
-	db := database.New(vaultDir)
-	dbFile, err := db.File(vaultID, vaultKey, database.FileModeOpen)
+	var vaultList []tacpassentity.Vault
+	err := s.vaultFile.FindWhere(&vaultList, func(m map[string]any) bool {
+		groupIDs, ok := m["group_ids"].([]any)
+		if !ok {
+			return false
+		}
+
+		for _, value := range groupIDs {
+			id, ok := value.(string)
+			if ok && id == groupID {
+				return true
+			}
+		}
+
+		return false
+	}).Order("ID ASC").Error
 	if err != nil {
 		return nil, err
 	}
 
-	var vaultList []tacpassentity.Vault
-	err = dbFile.FindAll(vaultList).Order("ID ASC").Error
-	if err != nil {
-		return nil, err
-	}
 	return vaultList, nil
 }
 
-func (s *ReplicaService) GetChangesAfterOnReplica(
+func (s *ReplicaService) GetChangesAfter(
 	sotID string,
 	syncLastChangeID string,
 	syncLimit int,
-	dbFile *database.DatabaseFile,
 ) (*contract.PendingVaultChange, error) {
 	changes, err := s.syncService.GetChangesAfter(
 		sotID,
@@ -197,7 +211,7 @@ func (s *ReplicaService) GetChangesAfterOnReplica(
 		if change.Operation != tacenvaentity.OperationDelete {
 			var vaultFound entity.Vault
 
-			err := dbFile.FindFirstWhere(
+			err := s.vaultFile.FindFirstWhere(
 				&vaultFound,
 				func(data map[string]any) bool {
 					ID, ok := data["id"]
@@ -231,18 +245,10 @@ func (s *ReplicaService) GetChangesAfterOnReplica(
 }
 
 func (s *ReplicaService) applyChanges(
-	vaultDir,
-	masterKey,
 	replicaAccessGroupID string,
 	appliedChanges *contract.PendingVaultChange,
 ) error {
 	syncChanges := appliedChanges.SyncChanges
-	db := database.New(vaultDir)
-	dbFile, err := db.File("vault", masterKey, database.FileModeOpenOrCreate)
-	if err != nil {
-		return err
-	}
-
 	setVault := func(vaultChangeData *contract.VaultChangeData, accessGroupID string) *tacpassentity.Vault {
 		if len(vaultChangeData.VaultAccessList) == 0 {
 			return nil
@@ -268,7 +274,7 @@ func (s *ReplicaService) applyChanges(
 				continue
 			}
 			vault := setVault(&existData, replicaAccessGroupID)
-			err := dbFile.Insert(&vault).Error
+			err := s.vaultFile.Insert(&vault).Error
 			if err != nil {
 				return err
 			}
@@ -279,7 +285,7 @@ func (s *ReplicaService) applyChanges(
 				continue
 			}
 			vault := setVault(&existData, replicaAccessGroupID)
-			err := dbFile.Update(&vault).Error
+			err := s.vaultFile.Update(&vault).Error
 			if err != nil {
 				if errors.Is(err, database.ErrRecordNotFound) {
 					continue
@@ -289,7 +295,7 @@ func (s *ReplicaService) applyChanges(
 			}
 
 		case tacenvaentity.OperationDelete:
-			err := dbFile.Delete(vaultID).Error
+			err := s.vaultFile.Delete(vaultID).Error
 			if err != nil {
 				if errors.Is(err, database.ErrRecordNotFound) {
 					continue
@@ -298,7 +304,7 @@ func (s *ReplicaService) applyChanges(
 			}
 
 			if err := s.vaultRecordService.Destroy(
-				vaultDir,
+				*s.vaultDir,
 				vaultID,
 			); err != nil {
 				return err
@@ -309,9 +315,7 @@ func (s *ReplicaService) applyChanges(
 	return nil
 }
 
-func (s *ReplicaService) SyncOnReplica(
-	vaultDir string,
-	masterKey string,
+func (s *ReplicaService) Sync(
 	sotID string,
 	replicaAccessGroupID string,
 	replicaChanges *contract.PendingVaultChange,
@@ -333,7 +337,7 @@ func (s *ReplicaService) SyncOnReplica(
 		// return nil
 	}
 
-	if err := s.applyChanges(vaultDir, masterKey, replicaAccessGroupID, &contract.PendingVaultChange{
+	if err := s.applyChanges(replicaAccessGroupID, &contract.PendingVaultChange{
 		SyncChanges:         appliedChanges,
 		VaultChangeDataList: appliedData,
 	}); err != nil {
@@ -345,4 +349,23 @@ func (s *ReplicaService) SyncOnReplica(
 		syncEntityVault,
 		sotChanges.SyncChanges,
 	)
+}
+
+func (s *ReplicaService) GetWrappedKey(
+	vaultID string,
+) (string, error) {
+	var vaultFound entity.Vault
+
+	err := s.vaultFile.FindFirstWhere(
+		&vaultFound,
+		func(data map[string]any) bool {
+			ID, ok := data["id"]
+			return ok && ID == vaultID
+		},
+	)
+	if err != nil {
+		return "", err
+	}
+
+	return vaultFound.WrappedKey, nil
 }

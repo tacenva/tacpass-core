@@ -6,6 +6,7 @@ import (
 
 	tacenvaentity "github.com/tacenva/tacenva-core/entity"
 	"github.com/tacenva/tacenva-core/sync"
+	"github.com/tacenva/tacenva-core/util/credential"
 	"github.com/tacenva/tacpass-core/contract"
 	tacpassentity "github.com/tacenva/tacpass-core/entity"
 	"github.com/tacenva/tacpass-core/internal/vaultaccess"
@@ -18,6 +19,12 @@ type SotService struct {
 	vaultaccessService *vaultaccess.Service
 	vaultRecordService *vaultrecord.Service
 	syncService        *sync.Service
+
+	vaultDir *string
+}
+
+func (s *SotService) SetConfig(vaultDir string) {
+	s.vaultDir = &vaultDir
 }
 
 func NewSotService(
@@ -55,20 +62,36 @@ func (s *SotService) create(
 }
 
 func (s *SotService) Create(
-	authorizer *tacenvaentity.User,
-	vaultDir string,
+	authorizedUser *tacenvaentity.User,
 	vault *tacpassentity.Vault,
-	vaultAccessList []tacpassentity.VaultAccess,
 	lastChangeID *string,
 ) error {
-	err := s.repository.Transaction(func(tx *gorm.DB) error {
+	publicKeyOfGroups, err := s.vaultaccessService.PublicKeyOfGroups(
+		authorizedUser,
+		vault.GroupIDs,
+	)
+	if err != nil {
+		return err
+	}
+
+	unwrappedVaultKey, err := credential.Generate(32)
+	if err != nil {
+		return err
+	}
+
+	vaultAccessList, err := s.vaultaccessService.Generate(publicKeyOfGroups, []byte(unwrappedVaultKey))
+	if err != nil {
+		return err
+	}
+
+	err = s.repository.Transaction(func(tx *gorm.DB) error {
 		err := s.create(tx, vault, vaultAccessList)
 		if err != nil {
 			return nil
 		}
-		// if err := s.vaultRecordService.Init(vaultDir, vault.ID, vaultKey); err != nil {
-		// 	return err
-		// }
+		if err := s.vaultRecordService.Local.Init(vault.ID, unwrappedVaultKey); err != nil {
+			return err
+		}
 
 		if err := s.syncService.RecordChange(
 			tx,
@@ -76,8 +99,8 @@ func (s *SotService) Create(
 			syncEntityVault,
 			vault.ID,
 			tacenvaentity.OperationCreate,
-			authorizer.AccessUnit.SotID,
-			authorizer.Hostname,
+			authorizedUser.AccessUnit.SotID,
+			authorizedUser.Hostname,
 		); err != nil {
 			return err
 		}
@@ -119,9 +142,9 @@ func (s *SotService) update(
 }
 
 func (s *SotService) Update(
-	authorizer *tacenvaentity.User,
+	authorizedUser *tacenvaentity.User,
 	vault *tacpassentity.Vault,
-	vaultAccessList []tacpassentity.VaultAccess,
+	unwrappedVaultkey []byte,
 	lastChangeID *string,
 ) error {
 	if vault == nil {
@@ -130,6 +153,19 @@ func (s *SotService) Update(
 
 	vault.ID = strings.TrimSpace(vault.ID)
 	vault.Name = strings.TrimSpace(vault.Name)
+
+	publicKeyOfGroups, err := s.vaultaccessService.PublicKeyOfGroups(
+		authorizedUser,
+		vault.GroupIDs,
+	)
+	if err != nil {
+		return err
+	}
+
+	vaultAccessList, err := s.vaultaccessService.Generate(publicKeyOfGroups, unwrappedVaultkey)
+	if err != nil {
+		return err
+	}
 
 	return s.repository.Transaction(func(tx *gorm.DB) error {
 		err := s.update(tx, vault, vaultAccessList)
@@ -143,15 +179,14 @@ func (s *SotService) Update(
 			syncEntityVault,
 			vault.ID,
 			tacenvaentity.OperationUpdate,
-			authorizer.AccessUnit.SotID,
-			authorizer.Hostname,
+			authorizedUser.AccessUnit.SotID,
+			authorizedUser.Hostname,
 		)
 	})
 }
 
 func (s *SotService) delete(
 	tx *gorm.DB,
-	vaultDir string,
 	vaultID string,
 ) error {
 	if err := s.repository.Delete(
@@ -162,7 +197,7 @@ func (s *SotService) delete(
 	}
 
 	if err := s.vaultRecordService.Destroy(
-		vaultDir,
+		*s.vaultDir,
 		vaultID,
 	); err != nil {
 		return err
@@ -172,8 +207,7 @@ func (s *SotService) delete(
 }
 
 func (s *SotService) Delete(
-	authorizer *tacenvaentity.User,
-	vaultDir string,
+	authorizedUser *tacenvaentity.User,
 	id string,
 	sotID string,
 	lastChangeID *string,
@@ -193,7 +227,7 @@ func (s *SotService) Delete(
 	}
 
 	return s.repository.Transaction(func(tx *gorm.DB) error {
-		err := s.delete(tx, vaultDir, vault.ID)
+		err := s.delete(tx, vault.ID)
 		if err != nil {
 			return err
 		}
@@ -205,7 +239,7 @@ func (s *SotService) Delete(
 			vault.ID,
 			tacenvaentity.OperationDelete,
 			sotID,
-			authorizer.Hostname,
+			authorizedUser.Hostname,
 		); err != nil {
 			return err
 		}
@@ -215,10 +249,10 @@ func (s *SotService) Delete(
 }
 
 func (s *SotService) List(
-	authorizer *tacenvaentity.User,
+	authorizedUser *tacenvaentity.User,
 ) ([]tacpassentity.Vault, error) {
 	vaultList, err := s.repository.FindAccessible(
-		authorizer.AccessUnit.GroupID,
+		authorizedUser.AccessUnit.GroupID,
 	)
 	if err != nil {
 		return nil, err
@@ -228,12 +262,12 @@ func (s *SotService) List(
 }
 
 func (s *SotService) GetChangesAfter(
-	authorizer *tacenvaentity.User,
+	authorizedUser *tacenvaentity.User,
 	syncLastChangeID string,
 	syncLimit int,
 ) (*contract.PendingVaultChange, error) {
 	changes, err := s.syncService.GetChangesAfter(
-		authorizer.AccessUnit.SotID,
+		authorizedUser.AccessUnit.SotID,
 		syncEntityVault,
 		syncLastChangeID,
 		syncLimit,
@@ -263,9 +297,9 @@ func (s *SotService) GetChangesAfter(
 	}
 
 	for vaultID, data := range vaultChangeDataList {
-		vaFromVault, err := s.vaultaccessService.List(
+		vaFromVault, err := s.vaultaccessService.Get(
 			vaultID,
-			authorizer.AccessUnit.GroupID,
+			authorizedUser.AccessUnit.GroupID,
 		)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -316,7 +350,7 @@ func (s *SotService) applyChanges(
 			}
 
 		case tacenvaentity.OperationDelete:
-			err := s.delete(tx, "", vaultID) // TODO: vaultdir
+			err := s.delete(tx, vaultID)
 			if err != nil {
 				return err
 			}
@@ -327,14 +361,14 @@ func (s *SotService) applyChanges(
 }
 
 func (s *SotService) Sync(
-	authorizer *tacenvaentity.User,
+	authorizedUser *tacenvaentity.User,
 	sotStartChangeID string,
 	limit int,
 	replicaChanges *contract.PendingVaultChange,
 ) error {
 	// TODO: get allowed to edit too
 	sotChanges, err := s.GetChangesAfter(
-		authorizer,
+		authorizedUser,
 		sotStartChangeID,
 		limit,
 	)
@@ -364,7 +398,7 @@ func (s *SotService) Sync(
 		}
 
 		err = s.syncService.InsertSyncChanges(
-			authorizer.AccessUnit.SotID,
+			authorizedUser.AccessUnit.SotID,
 			syncEntityVault,
 			replicaChanges.SyncChanges, // TODO: changes to something right
 		)
@@ -375,4 +409,20 @@ func (s *SotService) Sync(
 	})
 
 	return err
+}
+
+func (s *SotService) GetWrappedKey(
+	authorizedUser *tacenvaentity.User,
+	vaultID string,
+) (string, error) {
+	vaFromVault, err := s.vaultaccessService.Get(
+		vaultID,
+		authorizedUser.AccessUnit.GroupID,
+	)
+
+	if err != nil {
+		return "", err
+	}
+
+	return vaFromVault.WrappedVaultKey, nil
 }

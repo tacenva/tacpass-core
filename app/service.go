@@ -22,14 +22,18 @@ type Services struct {
 func NewServices(
 	sqliteDB *gorm.DB,
 	tacenvaDB *database.DB,
+	sotHostname string,
 ) *Services {
 	tacenvaService := tacenvaapp.NewServices(
 		sqliteDB,
 		tacenvaDB,
+		sotHostname,
 	)
 
 	vaultAccessService := vaultaccess.NewService(
 		vaultaccess.NewRepository(sqliteDB),
+		tacenvaService.AccessControl.PublicKeyOfGroups,
+		tacenvaService.AccessControl.List,
 	)
 
 	vaultService := vault.NewService(

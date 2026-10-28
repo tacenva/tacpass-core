@@ -5,7 +5,6 @@ import (
 	"github.com/tacenva/tacpass-core/entity"
 	tacpassentity "github.com/tacenva/tacpass-core/entity"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 type repository struct {
@@ -16,12 +15,6 @@ func NewRepository(db *gorm.DB) *repository {
 	return &repository{
 		db: db,
 	}
-}
-
-func (r *repository) Create(
-	vaultAccess *entity.VaultAccess,
-) error {
-	return r.db.Create(vaultAccess).Error
 }
 
 func (r *repository) CreateTx(
@@ -56,30 +49,6 @@ func (r *repository) CreateBulkTx(
 		Error
 }
 
-func (r *repository) Update(
-	vaultAccess *entity.VaultAccess,
-) error {
-	return r.db.Save(vaultAccess).Error
-}
-
-func (r *repository) Delete(id string) error {
-	result := r.db.Delete(
-		&entity.VaultAccess{},
-		"id = ?",
-		id,
-	)
-
-	if result.Error != nil {
-		return result.Error
-	}
-
-	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
-	}
-
-	return nil
-}
-
 func (r *repository) DeleteBulkTx(
 	tx *gorm.DB,
 	vaultID string,
@@ -94,42 +63,42 @@ func (r *repository) DeleteBulkTx(
 		Delete(&tacpassentity.VaultAccess{}).Error
 }
 
-func (r *repository) Upsert(
-	tx *gorm.DB,
-	vaultAccesses []entity.VaultAccess,
-) error {
-	if len(vaultAccesses) == 0 {
-		return nil
-	}
+// func (r *repository) Upsert(
+// 	tx *gorm.DB,
+// 	vaultAccesses []entity.VaultAccess,
+// ) error {
+// 	if len(vaultAccesses) == 0 {
+// 		return nil
+// 	}
 
-	records := make([]entity.VaultAccess, 0, len(vaultAccesses))
+// 	records := make([]entity.VaultAccess, 0, len(vaultAccesses))
 
-	for _, item := range vaultAccesses {
-		if item.ID == "" {
-			return gorm.ErrInvalidData
-		}
+// 	for _, item := range vaultAccesses {
+// 		if item.ID == "" {
+// 			return gorm.ErrInvalidData
+// 		}
 
-		records = append(records, item)
-	}
+// 		records = append(records, item)
+// 	}
 
-	if len(records) == 0 {
-		return nil
-	}
+// 	if len(records) == 0 {
+// 		return nil
+// 	}
 
-	return tx.
-		Clauses(clause.OnConflict{
-			Columns: []clause.Column{
-				{Name: "id"},
-			},
-			DoUpdates: clause.AssignmentColumns([]string{
-				"vault_id",
-				"access_unit_id",
-				"vault_key",
-			}),
-		}).
-		Create(&records).
-		Error
-}
+// 	return tx.
+// 		Clauses(clause.OnConflict{
+// 			Columns: []clause.Column{
+// 				{Name: "id"},
+// 			},
+// 			DoUpdates: clause.AssignmentColumns([]string{
+// 				"vault_id",
+// 				"access_unit_id",
+// 				"vault_key",
+// 			}),
+// 		}).
+// 		Create(&records).
+// 		Error
+// }
 
 func (r *repository) DeleteMissing(
 	tx *gorm.DB,
@@ -175,3 +144,5 @@ func (r *repository) FindByVault(
 
 	return result, nil
 }
+
+// func (r *repository)
