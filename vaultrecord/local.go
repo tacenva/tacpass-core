@@ -53,7 +53,7 @@ func (s *Local) CreateOnSot(
 	data []byte,
 	sotID string,
 	lastChangeID *string,
-	hostname string,
+	changeBy string,
 ) error {
 	// if !auth.HasWritePermission() {
 	// 	return ErrForbidden
@@ -64,7 +64,7 @@ func (s *Local) CreateOnSot(
 		data,
 		sotID,
 		lastChangeID,
-		hostname,
+		changeBy,
 	)
 }
 
@@ -73,14 +73,13 @@ func (s *Local) CreateOnReplica(
 	data []byte,
 	sotID string,
 	lastChangeID *string,
-	hostname string,
 ) error {
 	return s.create(
 		recordID,
 		data,
 		sotID,
 		lastChangeID,
-		hostname,
+		"local",
 	)
 }
 
@@ -90,7 +89,7 @@ func (s *Local) UpdateOnSot(
 	data []byte,
 	sotID string,
 	lastChangeID *string,
-	hostname string,
+	changeBy string,
 ) error {
 	// if !auth.HasWritePermission() {
 	// 	return ErrForbidden
@@ -100,7 +99,7 @@ func (s *Local) UpdateOnSot(
 		data,
 		sotID,
 		lastChangeID,
-		hostname,
+		changeBy,
 	)
 }
 
@@ -109,14 +108,13 @@ func (s *Local) UpdateOnReplica(
 	data []byte,
 	sotID string,
 	lastChangeID *string,
-	hostname string,
 ) error {
 	return s.update(
 		recordID,
 		data,
 		sotID,
 		lastChangeID,
-		hostname,
+		"local",
 	)
 }
 
@@ -125,7 +123,7 @@ func (s *Local) DeleteOnSot(
 	recordID string,
 	sotID string,
 	lastChangeID *string,
-	hostname string,
+	changeBy string,
 ) error {
 	// if !auth.HasWritePermission() {
 	// 	return ErrForbidden
@@ -135,7 +133,7 @@ func (s *Local) DeleteOnSot(
 		recordID,
 		sotID,
 		lastChangeID,
-		hostname,
+		changeBy,
 	)
 }
 
@@ -143,13 +141,12 @@ func (s *Local) DeleteOnReplica(
 	recordID string,
 	sotID string,
 	lastChangeID *string,
-	hostname string,
 ) error {
 	return s.delete(
 		recordID,
 		sotID,
 		lastChangeID,
-		hostname,
+		"local",
 	)
 }
 
@@ -158,7 +155,7 @@ func (s *Local) create(
 	data []byte,
 	sotID string,
 	lastChangeID *string,
-	hostname string,
+	changeBy string,
 ) error {
 	if len(data) == 0 {
 		return ErrRecordDataEmpty
@@ -177,7 +174,7 @@ func (s *Local) create(
 			*recordID,
 			tacenvaentity.OperationCreate,
 			sotID,
-			hostname,
+			changeBy,
 		)
 	})
 	if err != nil {
@@ -192,7 +189,7 @@ func (s *Local) update(
 	data []byte,
 	sotID string,
 	lastChangeID *string,
-	hostname string,
+	changeBy string,
 ) error {
 	if len(data) == 0 {
 		return ErrRecordDataEmpty
@@ -213,7 +210,7 @@ func (s *Local) update(
 			recordID,
 			tacenvaentity.OperationUpdate,
 			sotID,
-			hostname,
+			changeBy,
 		)
 	})
 }
@@ -222,7 +219,7 @@ func (s *Local) delete(
 	recordID string,
 	sotID string,
 	lastChangeID *string,
-	hostname string,
+	changeBy string,
 ) error {
 	if err := s.vaultRecordFile.DeleteRaw(recordID); err != nil {
 		return err
@@ -236,7 +233,7 @@ func (s *Local) delete(
 			recordID,
 			tacenvaentity.OperationDelete,
 			sotID,
-			hostname,
+			changeBy,
 		)
 	})
 }
