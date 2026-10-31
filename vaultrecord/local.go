@@ -12,12 +12,52 @@ import (
 
 type Local struct {
 	syncService *sync.Service
-	repository  *repository
 
-	vaultDir        *string
-	vaultID         *string
-	vaultRecordFile *database.DatabaseFile
-	entityName      *string
+	vaultDir           string
+	vaultID            *string
+	vaultRawRecordFile *database.DatabaseFile
+	vaultRecordFile    *database.DatabaseFile
+	entityName         *string
+}
+
+func NewLocalService(
+	syncService *sync.Service,
+	vaultDir string,
+) *Local {
+	return &Local{
+		syncService: syncService,
+		vaultDir:    vaultDir,
+	}
+}
+
+func (s *Local) SetConfig(
+	vaultID string,
+	unwrappedVaultKey string,
+) error {
+	s.vaultID = &vaultID
+
+	db := database.New(s.vaultDir)
+	vaultRawRecordFile, err := db.NewRawFile(
+		vaultID,
+	)
+	if err != nil {
+		return err
+	}
+	s.vaultRawRecordFile = vaultRawRecordFile
+
+	vaultRecordFile, err := db.File(
+		vaultID,
+		unwrappedVaultKey,
+		database.FileModeOpen,
+	)
+	if err != nil {
+		return err
+	}
+	s.vaultRecordFile = vaultRecordFile
+
+	s.entityName = new(string)
+	*s.entityName = syncEntityVaultRecord + ":" + vaultID
+	return nil
 }
 
 func (s *Local) SimulateEncryption(
@@ -28,7 +68,7 @@ func (s *Local) SimulateEncryption(
 
 func (s *Local) Init(
 	vaultID string,
-	vaultKey string,
+	unwrappedVaultKey string,
 ) error {
 	vaultID = strings.TrimSpace(vaultID)
 
@@ -36,11 +76,11 @@ func (s *Local) Init(
 		return ErrVaultIDEmpty
 	}
 
-	db := database.New(*s.vaultDir)
+	db := database.New(s.vaultDir)
 
 	_, err := db.File(
 		vaultID,
-		vaultKey,
+		unwrappedVaultKey,
 		database.FileModeOpenOrCreate,
 	)
 
@@ -161,7 +201,7 @@ func (s *Local) create(
 		return ErrRecordDataEmpty
 	}
 
-	err := s.vaultRecordFile.InsertRaw(recordID, data)
+	err := s.vaultRawRecordFile.InsertRaw(recordID, data)
 	if err != nil {
 		return err
 	}
@@ -195,7 +235,7 @@ func (s *Local) update(
 		return ErrRecordDataEmpty
 	}
 
-	if err := s.vaultRecordFile.UpdateRaw(
+	if err := s.vaultRawRecordFile.UpdateRaw(
 		recordID,
 		data,
 	); err != nil {
@@ -221,7 +261,7 @@ func (s *Local) delete(
 	lastChangeID *string,
 	changeBy string,
 ) error {
-	if err := s.vaultRecordFile.DeleteRaw(recordID); err != nil {
+	if err := s.vaultRawRecordFile.DeleteRaw(recordID); err != nil {
 		return err
 	}
 

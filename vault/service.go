@@ -33,6 +33,8 @@ func NewService(
 	repository *repository,
 	vaultaccessService *vaultaccess.Service,
 	syncService *sync.Service,
+
+	vaultDir string,
 ) *Service {
 	vaultrecordRepository := vaultrecord.NewRepository(
 		repository.db,
@@ -40,6 +42,7 @@ func NewService(
 	vaultrecordService := vaultrecord.NewService(
 		syncService,
 		vaultrecordRepository,
+		vaultDir,
 	)
 	return &Service{
 		repository:         repository,

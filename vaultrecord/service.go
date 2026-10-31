@@ -33,10 +33,22 @@ type Service struct {
 func NewService(
 	syncService *sync.Service,
 	repository *repository,
+
+	vaultDir string,
 ) *Service {
 	return &Service{
 		syncService: syncService,
 		repository:  repository,
+
+		Local: NewLocalService(
+			syncService,
+			vaultDir,
+		),
+
+		Remote: NewRemoteService(
+			syncService,
+			vaultDir,
+		),
 	}
 }
 

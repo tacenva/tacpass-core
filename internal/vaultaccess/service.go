@@ -45,17 +45,20 @@ func NewService(
 
 func (s *Service) Sync(
 	tx *gorm.DB,
+	vaultID string,
 	vaultAccessList []tacpassentity.VaultAccess,
 ) error {
 	if tx == nil {
 		return errors.New("transaction is required")
 	}
 
-	if len(vaultAccessList) == 0 {
-		return nil
+	if vaultID == "" {
+		return errors.New("vault ID cannot be empty")
 	}
 
-	vaultID := vaultAccessList[0].VaultID
+	for i := range vaultAccessList {
+		vaultAccessList[i].VaultID = vaultID
+	}
 
 	existing, err := s.repository.FindByVault(tx, vaultID)
 	if err != nil {
@@ -69,13 +72,7 @@ func (s *Service) Sync(
 		existingGroupIDs[item.AccessGroupID] = struct{}{}
 	}
 
-	for i := range vaultAccessList {
-		item := &vaultAccessList[i]
-
-		if item.VaultID != vaultID {
-			return errors.New("all vault access records must belong to the same vault")
-		}
-
+	for _, item := range vaultAccessList {
 		if item.AccessGroupID == "" {
 			return errors.New("access group ID cannot be empty")
 		}
@@ -131,7 +128,8 @@ func (s *Service) Generate(
 ) ([]tacpassentity.VaultAccess, error) {
 	vaultAccessList := make([]tacpassentity.VaultAccess, 0, len(publicKeyList))
 	for groupID := range publicKeyList {
-		keyPairOfGroup := keyring.FromPublicKey(publicKeyList[groupID])
+		publicKeyOfGroup := publicKeyList[groupID]
+		keyPairOfGroup := keyring.FromPublicKey(publicKeyOfGroup)
 		wrappedVaultKey, err := keyPairOfGroup.Seal(unwrappedVaultKey)
 		if err != nil {
 			return nil, err

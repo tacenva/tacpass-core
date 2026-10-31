@@ -55,7 +55,7 @@ func (s *SotService) create(
 		return err
 	}
 
-	if err := s.vaultaccessService.Sync(tx, vaultAccessList); err != nil {
+	if err := s.vaultaccessService.Sync(tx, vault.ID, vaultAccessList); err != nil {
 		return err
 	}
 	return nil
@@ -87,7 +87,7 @@ func (s *SotService) Create(
 	err = s.repository.Transaction(func(tx *gorm.DB) error {
 		err := s.create(tx, vault, vaultAccessList)
 		if err != nil {
-			return nil
+			return err
 		}
 		if err := s.vaultRecordService.Local.Init(vault.ID, unwrappedVaultKey); err != nil {
 			return err
@@ -134,7 +134,7 @@ func (s *SotService) update(
 		return result.Error
 	}
 
-	if err := s.vaultaccessService.Sync(tx, vaultAccessList); err != nil {
+	if err := s.vaultaccessService.Sync(tx, vault.ID, vaultAccessList); err != nil {
 		return err
 	}
 

@@ -10,10 +10,19 @@ import (
 
 type Remote struct {
 	syncService *sync.Service
-	repository  *repository
 
-	vaultDir        *string
+	vaultDir        string
 	vaultRecordFile *database.DatabaseFile
+}
+
+func NewRemoteService(
+	syncService *sync.Service,
+	vaultDir string,
+) *Remote {
+	return &Remote{
+		syncService: syncService,
+		vaultDir:    vaultDir,
+	}
 }
 
 func (s *Remote) GetBlob(
@@ -30,7 +39,7 @@ func (s *Remote) GetBlob(
 		return nil, ErrVaultIDEmpty
 	}
 
-	db := database.New(*s.vaultDir)
+	db := database.New(s.vaultDir)
 
 	blob, err := db.ReadMetadataOnly(vaultID)
 	if err != nil {
@@ -55,7 +64,7 @@ func (s *Remote) StoreBlob(
 		return ErrVaultIDEmpty
 	}
 
-	db := database.New(*s.vaultDir)
+	db := database.New(s.vaultDir)
 
 	err := db.Write(vaultID, data)
 	if err != nil {
