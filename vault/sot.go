@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tacenvaentity "github.com/tacenva/tacenva-core/entity"
+	"github.com/tacenva/tacenva-core/genericerror"
 	"github.com/tacenva/tacenva-core/sync"
 	"github.com/tacenva/tacenva-core/util/credential"
 	"github.com/tacenva/tacpass-core/contract"
@@ -89,7 +90,7 @@ func (s *SotService) Create(
 		if err != nil {
 			return err
 		}
-		if err := s.vaultRecordService.Local.Init(vault.ID, unwrappedVaultKey); err != nil {
+		if err := s.vaultRecordService.Local.Init(*s.vaultDir, vault.ID, unwrappedVaultKey); err != nil {
 			return err
 		}
 
@@ -360,55 +361,115 @@ func (s *SotService) applyChanges(
 	return nil
 }
 
+func (s *SotService) filterAllowedChangesOnly(
+	authorizedGroupID string,
+	replicaChanges *contract.PendingVaultChange,
+) (*contract.PendingVaultChange, error) {
+	if replicaChanges == nil {
+		return nil, genericerror.ErrEmptyValue
+	}
+
+	allowedChanges := &contract.PendingVaultChange{
+		SyncChanges: make(
+			[]tacenvaentity.SyncChange,
+			0,
+			len(replicaChanges.SyncChanges),
+		),
+		VaultChangeDataList: make(
+			map[contract.VaultID]contract.VaultChangeData,
+		),
+	}
+
+	seen := make(map[contract.VaultID]bool, len(replicaChanges.SyncChanges))
+
+	for _, syncChange := range replicaChanges.SyncChanges {
+		vaultID := contract.VaultID(syncChange.EntityID)
+
+		isAllowed, exists := seen[vaultID]
+		if !exists {
+			allowed, err := s.repository.IsAllowedToChange(
+				syncChange.EntityID,
+				authorizedGroupID,
+			)
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, err
+			}
+
+			isAllowed = errors.Is(err, gorm.ErrRecordNotFound) || allowed
+			seen[vaultID] = isAllowed
+		}
+
+		if !isAllowed {
+			continue
+		}
+
+		allowedChanges.SyncChanges = append(
+			allowedChanges.SyncChanges,
+			syncChange,
+		)
+
+		if changeData, exists := replicaChanges.VaultChangeDataList[vaultID]; exists {
+			allowedChanges.VaultChangeDataList[vaultID] = changeData
+		}
+	}
+
+	return allowedChanges, nil
+}
+
 func (s *SotService) Sync(
 	authorizedUser *tacenvaentity.User,
 	sotStartChangeID string,
 	limit int,
 	replicaChanges *contract.PendingVaultChange,
-) error {
-	// TODO: get allowed to edit too
+) (*contract.PendingVaultChange, error) {
+	allowedChanges, err := s.filterAllowedChangesOnly(
+		authorizedUser.AccessUnit.GroupID,
+		replicaChanges,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// debug.LogJSON("Replica changes", replicaChanges)
+	// debug.LogJSON("Allowed changes", allowedChanges)
+
 	sotChanges, err := s.GetChangesAfter(
 		authorizedUser,
 		sotStartChangeID,
 		limit,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	appliedChanges, appliedData := sync.MergePendingChanges(
-		replicaChanges.SyncChanges,
+		allowedChanges.SyncChanges,
 		sotChanges.SyncChanges,
-		replicaChanges.VaultChangeDataList,
+		allowedChanges.VaultChangeDataList,
 		sotChanges.VaultChangeDataList,
 		nil,
 	)
 
-	if appliedChanges == nil || appliedData == nil {
-		//
-	}
-
 	err = s.repository.db.Transaction(func(tx *gorm.DB) error {
-		err := s.applyChanges(tx, &contract.PendingVaultChange{
+		if err := s.applyChanges(tx, &contract.PendingVaultChange{
 			SyncChanges:         appliedChanges,
 			VaultChangeDataList: appliedData,
-		})
-		if err != nil {
+		}); err != nil {
 			return err
 		}
 
-		err = s.syncService.InsertSyncChanges(
+		return s.syncService.InsertSyncChangesTx(
+			tx,
 			authorizedUser.AccessUnit.SotID,
 			syncEntityVault,
-			replicaChanges.SyncChanges, // TODO: changes to something right
+			allowedChanges.SyncChanges,
 		)
-		if err != nil {
-			return err
-		}
-		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
 
-	return err
+	return allowedChanges, nil
 }
 
 func (s *SotService) GetWrappedKey(

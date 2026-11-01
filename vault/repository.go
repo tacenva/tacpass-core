@@ -119,13 +119,12 @@ func (r *repository) Delete(
 }
 
 func (r *repository) IsAllowedToChange(
-	tx *gorm.DB,
 	vaultID string,
 	groupID string,
 ) (bool, error) {
 	var vault entity.Vault
 
-	err := tx.
+	err := r.db.
 		Where(`
 			EXISTS (
 				SELECT 1

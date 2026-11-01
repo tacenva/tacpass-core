@@ -6,23 +6,34 @@ import (
 	"github.com/tacenva/database"
 	tacenvaentity "github.com/tacenva/tacenva-core/entity"
 	"github.com/tacenva/tacenva-core/sync"
+	"github.com/tacenva/tacpass-core/contract"
 )
 
 type Remote struct {
 	syncService *sync.Service
+	repository  *repository
 
 	vaultDir        string
 	vaultRecordFile *database.DatabaseFile
+	sotID           *string
 }
 
 func NewRemoteService(
 	syncService *sync.Service,
-	vaultDir string,
+	repository *repository,
 ) *Remote {
 	return &Remote{
 		syncService: syncService,
-		vaultDir:    vaultDir,
+		repository:  repository,
 	}
+}
+
+func (s *Remote) SetConfig(
+	vaultDir string,
+	sotID string,
+) {
+	s.vaultDir = vaultDir
+	s.sotID = &sotID
 }
 
 func (s *Remote) GetBlob(
@@ -55,9 +66,9 @@ func (s *Remote) StoreBlob(
 	sotID string,
 	data []byte,
 ) error {
-	// if !authorizer.HasWritePermission() {
-	// 	return ErrForbidden
-	// }
+	if !authorizer.HasWriteAccess() {
+		return ErrForbidden
+	}
 
 	vaultID = strings.TrimSpace(vaultID)
 	if vaultID == "" {
@@ -72,4 +83,58 @@ func (s *Remote) StoreBlob(
 	}
 
 	return nil
+}
+
+func (s *Remote) GetChangesAfter(
+	vaultID string,
+	startID string,
+	limit int,
+) (*contract.PendingVaultRecordChange, error) {
+	return s.repository.GetChangesAfter(
+		s.vaultDir,
+		vaultID,
+		*s.sotID,
+		startID,
+		limit,
+	)
+}
+
+func (s *Remote) SyncOnSot(
+	authorizer *tacenvaentity.User,
+	vaultID string,
+	sotStartChangeID string,
+	limit int,
+	replicaChanges *contract.PendingVaultRecordChange,
+) (err error) {
+	return s.repository.SyncOnSot(
+		authorizer,
+		s.vaultDir,
+		*s.sotID,
+		vaultID,
+		sotStartChangeID,
+		limit,
+		replicaChanges,
+	)
+}
+
+func (s *Remote) GetChangeCount(
+	vaultID string,
+	startID string,
+) (int64, error) {
+	return s.syncService.GetChangeCount(
+		*s.sotID,
+		s.repository.getEntityName(vaultID),
+		startID,
+	)
+}
+
+func (s *Remote) GetSyncLatestChangeId(
+	vaultID string,
+) (string, error) {
+	syncState, err := s.syncService.GetSyncState(
+		*s.sotID,
+		s.repository.getEntityName(vaultID),
+	)
+
+	return syncState.LastChangeID, err
 }

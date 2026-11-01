@@ -23,7 +23,6 @@ func NewServices(
 	sqliteDB *gorm.DB,
 	tacenvaDB *database.DB,
 	sotHostname string,
-	vaultDir string,
 ) *Services {
 	tacenvaService := tacenvaapp.NewServices(
 		sqliteDB,
@@ -41,7 +40,6 @@ func NewServices(
 		vault.NewRepository(sqliteDB),
 		vaultAccessService,
 		tacenvaService.SyncService,
-		vaultDir,
 	)
 
 	vaultRecordService := vaultService.GetVaultRecordService()

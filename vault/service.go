@@ -33,8 +33,6 @@ func NewService(
 	repository *repository,
 	vaultaccessService *vaultaccess.Service,
 	syncService *sync.Service,
-
-	vaultDir string,
 ) *Service {
 	vaultrecordRepository := vaultrecord.NewRepository(
 		repository.db,
@@ -42,7 +40,6 @@ func NewService(
 	vaultrecordService := vaultrecord.NewService(
 		syncService,
 		vaultrecordRepository,
-		vaultDir,
 	)
 	return &Service{
 		repository:         repository,
@@ -99,11 +96,11 @@ func (s *Service) GetChangeCount(
 	}, nil
 }
 
-func (s *Service) SetSyncStateToBeLastest(
+func (s *Service) SetSyncStateToBeLatest(
 	sotID string,
 ) error {
 	return s.syncService.Transaction(func(tx *gorm.DB) error {
-		return s.syncService.SetSyncStateToBeLastest(
+		return s.syncService.SetSyncStateToBeLatest(
 			tx,
 			sotID,
 			syncEntityVault,

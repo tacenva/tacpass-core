@@ -6,37 +6,43 @@ import (
 	"github.com/tacenva/database"
 	tacenvaentity "github.com/tacenva/tacenva-core/entity"
 	"github.com/tacenva/tacenva-core/sync"
+	"github.com/tacenva/tacpass-core/contract"
 	tacpassentity "github.com/tacenva/tacpass-core/entity"
 	"gorm.io/gorm"
 )
 
 type Local struct {
 	syncService *sync.Service
+	repository  *repository
 
-	vaultDir           string
+	currentVaultDir    string
 	vaultID            *string
 	vaultRawRecordFile *database.DatabaseFile
 	vaultRecordFile    *database.DatabaseFile
 	entityName         *string
+	sotID              *string
 }
 
 func NewLocalService(
 	syncService *sync.Service,
-	vaultDir string,
+	repository *repository,
 ) *Local {
 	return &Local{
 		syncService: syncService,
-		vaultDir:    vaultDir,
+		repository:  repository,
 	}
 }
 
 func (s *Local) SetConfig(
+	vaultDir string,
+	sotID string,
 	vaultID string,
 	unwrappedVaultKey string,
 ) error {
+	s.currentVaultDir = vaultDir
 	s.vaultID = &vaultID
 
-	db := database.New(s.vaultDir)
+	db := database.New(s.currentVaultDir)
 	vaultRawRecordFile, err := db.NewRawFile(
 		vaultID,
 	)
@@ -57,6 +63,8 @@ func (s *Local) SetConfig(
 
 	s.entityName = new(string)
 	*s.entityName = syncEntityVaultRecord + ":" + vaultID
+
+	s.sotID = &sotID
 	return nil
 }
 
@@ -67,6 +75,7 @@ func (s *Local) SimulateEncryption(
 }
 
 func (s *Local) Init(
+	vaultDir string,
 	vaultID string,
 	unwrappedVaultKey string,
 ) error {
@@ -76,7 +85,7 @@ func (s *Local) Init(
 		return ErrVaultIDEmpty
 	}
 
-	db := database.New(s.vaultDir)
+	db := database.New(vaultDir)
 
 	_, err := db.File(
 		vaultID,
@@ -91,18 +100,16 @@ func (s *Local) CreateOnSot(
 	authorizer *tacenvaentity.User,
 	recordID *string,
 	data []byte,
-	sotID string,
 	lastChangeID *string,
 	changeBy string,
 ) error {
-	// if !auth.HasWritePermission() {
-	// 	return ErrForbidden
-	// }
+	if !authorizer.HasWriteAccess() {
+		return ErrForbidden
+	}
 
 	return s.create(
 		recordID,
 		data,
-		sotID,
 		lastChangeID,
 		changeBy,
 	)
@@ -111,13 +118,11 @@ func (s *Local) CreateOnSot(
 func (s *Local) CreateOnReplica(
 	recordID *string,
 	data []byte,
-	sotID string,
 	lastChangeID *string,
 ) error {
 	return s.create(
 		recordID,
 		data,
-		sotID,
 		lastChangeID,
 		"local",
 	)
@@ -127,17 +132,16 @@ func (s *Local) UpdateOnSot(
 	authorizer *tacenvaentity.User,
 	recordID string,
 	data []byte,
-	sotID string,
 	lastChangeID *string,
 	changeBy string,
 ) error {
-	// if !auth.HasWritePermission() {
-	// 	return ErrForbidden
-	// }
+	if !authorizer.HasWriteAccess() {
+		return ErrForbidden
+	}
+
 	return s.update(
 		recordID,
 		data,
-		sotID,
 		lastChangeID,
 		changeBy,
 	)
@@ -146,13 +150,11 @@ func (s *Local) UpdateOnSot(
 func (s *Local) UpdateOnReplica(
 	recordID string,
 	data []byte,
-	sotID string,
 	lastChangeID *string,
 ) error {
 	return s.update(
 		recordID,
 		data,
-		sotID,
 		lastChangeID,
 		"local",
 	)
@@ -161,17 +163,15 @@ func (s *Local) UpdateOnReplica(
 func (s *Local) DeleteOnSot(
 	authorizer *tacenvaentity.User,
 	recordID string,
-	sotID string,
 	lastChangeID *string,
 	changeBy string,
 ) error {
-	// if !auth.HasWritePermission() {
-	// 	return ErrForbidden
-	// }
+	if !authorizer.HasWriteAccess() {
+		return ErrForbidden
+	}
 
 	return s.delete(
 		recordID,
-		sotID,
 		lastChangeID,
 		changeBy,
 	)
@@ -179,12 +179,10 @@ func (s *Local) DeleteOnSot(
 
 func (s *Local) DeleteOnReplica(
 	recordID string,
-	sotID string,
 	lastChangeID *string,
 ) error {
 	return s.delete(
 		recordID,
-		sotID,
 		lastChangeID,
 		"local",
 	)
@@ -193,7 +191,6 @@ func (s *Local) DeleteOnReplica(
 func (s *Local) create(
 	recordID *string,
 	data []byte,
-	sotID string,
 	lastChangeID *string,
 	changeBy string,
 ) error {
@@ -213,7 +210,7 @@ func (s *Local) create(
 			*s.entityName,
 			*recordID,
 			tacenvaentity.OperationCreate,
-			sotID,
+			*s.sotID,
 			changeBy,
 		)
 	})
@@ -227,7 +224,6 @@ func (s *Local) create(
 func (s *Local) update(
 	recordID string,
 	data []byte,
-	sotID string,
 	lastChangeID *string,
 	changeBy string,
 ) error {
@@ -249,7 +245,7 @@ func (s *Local) update(
 			*s.entityName,
 			recordID,
 			tacenvaentity.OperationUpdate,
-			sotID,
+			*s.sotID,
 			changeBy,
 		)
 	})
@@ -257,7 +253,6 @@ func (s *Local) update(
 
 func (s *Local) delete(
 	recordID string,
-	sotID string,
 	lastChangeID *string,
 	changeBy string,
 ) error {
@@ -272,7 +267,7 @@ func (s *Local) delete(
 			*s.entityName,
 			recordID,
 			tacenvaentity.OperationDelete,
-			sotID,
+			*s.sotID,
 			changeBy,
 		)
 	})
@@ -289,4 +284,73 @@ func (s *Local) List() ([]tacpassentity.VaultRecord, error) {
 	}
 
 	return records, nil
+}
+
+func (s *Local) GetChangesAfter(
+	startID string,
+	limit int,
+) (*contract.PendingVaultRecordChange, error) {
+	return s.repository.GetChangesAfter(
+		s.currentVaultDir,
+		*s.vaultID,
+		*s.sotID,
+		startID,
+		limit,
+	)
+}
+
+func (s *Local) SyncOnSot(
+	authorizer *tacenvaentity.User,
+	sotStartChangeID string,
+	limit int,
+	replicaChanges *contract.PendingVaultRecordChange,
+) (err error) {
+	return s.repository.SyncOnSot(
+		authorizer,
+		s.currentVaultDir,
+		*s.sotID,
+		*s.vaultID,
+		sotStartChangeID,
+		limit,
+		replicaChanges,
+	)
+}
+
+func (s *Local) SyncOnReplica(
+	changeBase *contract.PendingVaultRecordChange,
+	changeComp *contract.PendingVaultRecordChange,
+) (err error) {
+	return s.repository.SyncOnReplica(
+		s.currentVaultDir,
+		*s.sotID,
+		*s.vaultID,
+		changeBase,
+		changeComp,
+	)
+}
+
+func (s *Local) GetChangeCount(
+	startID string,
+) (int64, error) {
+	return s.syncService.GetChangeCount(
+		*s.sotID,
+		*s.entityName,
+		startID,
+	)
+}
+
+func (s *Local) GetSyncLatestChangeId() (string, error) {
+	syncState, err := s.syncService.GetSyncState(
+		*s.sotID,
+		*s.entityName,
+	)
+
+	return syncState.LastChangeID, err
+}
+
+func (s *Local) SetSyncStateToBeLatest() error {
+	return s.repository.SetSyncStateToBeLatest(
+		*s.sotID,
+		*s.vaultID,
+	)
 }

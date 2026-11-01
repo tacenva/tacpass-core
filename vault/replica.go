@@ -2,6 +2,8 @@ package vault
 
 import (
 	"errors"
+	"fmt"
+	"log"
 	"slices"
 	"strings"
 
@@ -21,8 +23,9 @@ type ReplicaService struct {
 	vaultRecordService *vaultrecord.Service
 	syncService        *sync.Service
 
-	vaultDir  *string
-	vaultFile *database.DatabaseFile
+	currentVaultDir *string
+	tacenvaDB       *database.DB
+	vaultFile       *database.DatabaseFile
 }
 
 func NewReplicaService(
@@ -42,7 +45,8 @@ func (s *ReplicaService) SetConfig(vaultDir, masterKey string) error {
 		return err
 	}
 
-	s.vaultDir = &vaultDir
+	s.currentVaultDir = &vaultDir
+	s.tacenvaDB = db
 	s.vaultFile = vaultFile
 
 	return nil
@@ -86,7 +90,7 @@ func (s *ReplicaService) Create(
 	); err != nil {
 		return err
 	}
-	if err := s.vaultRecordService.Local.Init(vault.ID, vaultKey); err != nil {
+	if err := s.vaultRecordService.Local.Init(*s.currentVaultDir, vault.ID, vaultKey); err != nil {
 		return err
 	}
 
@@ -155,7 +159,7 @@ func (s *ReplicaService) Delete(
 	}
 
 	if err := s.vaultRecordService.Destroy(
-		*s.vaultDir,
+		*s.currentVaultDir,
 		vaultID,
 	); err != nil {
 		return err
@@ -187,6 +191,7 @@ func (s *ReplicaService) List(
 		return nil, err
 	}
 
+	// debug.LogJSON("vault list", vaultList)
 	return vaultList, nil
 }
 
@@ -232,8 +237,6 @@ func (s *ReplicaService) GetChangesAfter(
 			}
 
 			existing.Vault = vaultFound
-			existing.Vault.WrappedKey = ""
-
 			vaultChangeDataList[vaultFound.ID] = existing
 		}
 	}
@@ -249,20 +252,38 @@ func (s *ReplicaService) applyChanges(
 	appliedChanges *contract.PendingVaultChange,
 ) error {
 	syncChanges := appliedChanges.SyncChanges
-	setVault := func(vaultChangeData *contract.VaultChangeData, accessGroupID string) *tacpassentity.Vault {
+	setVault := func(
+		vaultChangeData *contract.VaultChangeData,
+		accessGroupID string,
+	) (*tacpassentity.Vault, error) {
 		if len(vaultChangeData.VaultAccessList) == 0 {
-			return nil
+			return nil, errors.New("vault access list is empty")
 		}
 
 		vault := vaultChangeData.Vault
+
 		for _, vaData := range vaultChangeData.VaultAccessList {
-			if vaData.AccessGroupID == accessGroupID {
-				vault.WrappedKey = vaData.WrappedVaultKey
-				break
+			if vaData.AccessGroupID != accessGroupID {
+				continue
 			}
+
+			if vaData.WrappedVaultKey == "" {
+				return nil, fmt.Errorf(
+					"wrapped vault key is empty: vaultID=%s accessGroupID=%s",
+					vault.ID,
+					accessGroupID,
+				)
+			}
+
+			vault.WrappedKey = vaData.WrappedVaultKey
+			return &vault, nil
 		}
 
-		return &vault
+		return nil, fmt.Errorf(
+			"wrapped vault key not found: vaultID=%s accessGroupID=%s",
+			vault.ID,
+			accessGroupID,
+		)
 	}
 
 	for _, change := range syncChanges {
@@ -273,8 +294,15 @@ func (s *ReplicaService) applyChanges(
 			if !exist {
 				continue
 			}
-			vault := setVault(&existData, replicaAccessGroupID)
-			err := s.vaultFile.Insert(&vault).Error
+
+			vault, err := setVault(&existData, replicaAccessGroupID)
+			if err != nil {
+				return err
+			}
+
+			// debug.LogJSON("vault create sync", vault)
+
+			err = s.vaultFile.Insert(vault).Error
 			if err != nil {
 				return err
 			}
@@ -284,8 +312,14 @@ func (s *ReplicaService) applyChanges(
 			if !exist {
 				continue
 			}
-			vault := setVault(&existData, replicaAccessGroupID)
-			err := s.vaultFile.Update(&vault).Error
+			vault, err := setVault(&existData, replicaAccessGroupID)
+			if err != nil {
+				return err
+			}
+
+			// debug.LogJSON("vault update sync", vault)
+
+			err = s.vaultFile.Update(vault).Error
 			if err != nil {
 				if errors.Is(err, database.ErrRecordNotFound) {
 					continue
@@ -304,7 +338,7 @@ func (s *ReplicaService) applyChanges(
 			}
 
 			if err := s.vaultRecordService.Destroy(
-				*s.vaultDir,
+				*s.currentVaultDir,
 				vaultID,
 			); err != nil {
 				return err
@@ -321,11 +355,27 @@ func (s *ReplicaService) Sync(
 	replicaChanges *contract.PendingVaultChange,
 	sotChanges *contract.PendingVaultChange,
 ) error {
+	var sotSyncChanges []tacenvaentity.SyncChange
+	var sotChangeData map[contract.VaultID]contract.VaultChangeData
+
+	if sotChanges != nil {
+		sotSyncChanges = sotChanges.SyncChanges
+		sotChangeData = sotChanges.VaultChangeDataList
+	}
+
+	var replicaSyncChanges []tacenvaentity.SyncChange
+	var replicaChangeData map[contract.VaultID]contract.VaultChangeData
+
+	if replicaChanges != nil {
+		replicaSyncChanges = replicaChanges.SyncChanges
+		replicaChangeData = replicaChanges.VaultChangeDataList
+	}
+
 	appliedChanges, appliedData := sync.MergePendingChanges(
-		sotChanges.SyncChanges,
-		replicaChanges.SyncChanges,
-		sotChanges.VaultChangeDataList,
-		replicaChanges.VaultChangeDataList,
+		sotSyncChanges,
+		replicaSyncChanges,
+		sotChangeData,
+		replicaChangeData,
 		func(mergedData, compData contract.VaultChangeData) bool {
 			if slices.Contains(compData.Vault.GroupIDs, replicaAccessGroupID) {
 				return slices.Contains(mergedData.Vault.GroupIDs, replicaAccessGroupID)
@@ -334,7 +384,7 @@ func (s *ReplicaService) Sync(
 		},
 	)
 	if appliedChanges == nil || appliedData == nil {
-		// return nil
+		return nil
 	}
 
 	if err := s.applyChanges(replicaAccessGroupID, &contract.PendingVaultChange{
@@ -344,10 +394,13 @@ func (s *ReplicaService) Sync(
 		return err
 	}
 
+	log.Printf("replica access GroupID %s", replicaAccessGroupID)
+
+	// debug.LogJSON("applied data", appliedData)
 	return s.syncService.InsertSyncChanges(
 		sotID,
 		syncEntityVault,
-		sotChanges.SyncChanges,
+		sotSyncChanges,
 	)
 }
 
@@ -368,4 +421,10 @@ func (s *ReplicaService) GetWrappedKey(
 	}
 
 	return vaultFound.WrappedKey, nil
+}
+
+func (s *ReplicaService) GetRecordBlob(
+	vaultID string,
+) ([]byte, error) {
+	return s.tacenvaDB.Read(vaultID)
 }
