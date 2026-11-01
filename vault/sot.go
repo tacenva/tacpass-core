@@ -395,7 +395,7 @@ func (s *SotService) filterAllowedChangesOnly(
 				return nil, err
 			}
 
-			isAllowed = errors.Is(err, gorm.ErrRecordNotFound) || allowed
+			isAllowed = allowed
 			seen[vaultID] = isAllowed
 		}
 
@@ -449,16 +449,19 @@ func (s *SotService) Sync(
 		sotChanges.VaultChangeDataList,
 		nil,
 	)
+	// debug.LogJSON("applied changes", appliedChanges)
 
 	err = s.repository.db.Transaction(func(tx *gorm.DB) error {
-		if err := s.applyChanges(tx, &contract.PendingVaultChange{
-			SyncChanges:         appliedChanges,
-			VaultChangeDataList: appliedData,
-		}); err != nil {
+		if err := s.applyChanges(
+			tx,
+			&contract.PendingVaultChange{
+				SyncChanges:         appliedChanges,
+				VaultChangeDataList: appliedData,
+			}); err != nil {
 			return err
 		}
 
-		return s.syncService.InsertSyncChangesTx(
+		return s.syncService.InsertSyncChanges(
 			tx,
 			authorizedUser.AccessUnit.SotID,
 			syncEntityVault,

@@ -91,7 +91,7 @@ func (s *Service) Sync(
 		}
 	}
 
-	if err := s.repository.DeleteBulkTx(tx, vaultID, toDelete); err != nil {
+	if err := s.repository.DeleteBulk(tx, vaultID, toDelete); err != nil {
 		return err
 	}
 
@@ -109,7 +109,7 @@ func (s *Service) Sync(
 		return nil
 	}
 
-	return s.repository.CreateBulkTx(tx, toCreate)
+	return s.repository.CreateBulk(tx, toCreate)
 }
 
 func (s *Service) Get(

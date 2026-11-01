@@ -19,12 +19,11 @@ type Remote struct {
 }
 
 func NewRemoteService(
-	syncService *sync.Service,
 	repository *repository,
 ) *Remote {
 	return &Remote{
-		syncService: syncService,
 		repository:  repository,
+		syncService: repository.syncService,
 	}
 }
 
@@ -63,7 +62,6 @@ func (s *Remote) GetBlob(
 func (s *Remote) StoreBlob(
 	authorizer *tacenvaentity.User,
 	vaultID string,
-	sotID string,
 	data []byte,
 ) error {
 	if !authorizer.HasWriteAccess() {

@@ -36,9 +36,9 @@ func NewService(
 ) *Service {
 	vaultrecordRepository := vaultrecord.NewRepository(
 		repository.db,
+		syncService,
 	)
 	vaultrecordService := vaultrecord.NewService(
-		syncService,
 		vaultrecordRepository,
 	)
 	return &Service{
@@ -54,6 +54,7 @@ func NewService(
 			syncService,
 		),
 		Replica: NewReplicaService(
+			repository,
 			vaultrecordService,
 			syncService,
 		),

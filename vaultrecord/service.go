@@ -2,8 +2,6 @@ package vaultrecord
 
 import (
 	"errors"
-
-	"github.com/tacenva/tacenva-core/sync"
 )
 
 var (
@@ -22,17 +20,14 @@ type Service struct {
 }
 
 func NewService(
-	syncService *sync.Service,
 	repository *repository,
 ) *Service {
 	return &Service{
 		Local: NewLocalService(
-			syncService,
 			repository,
 		),
 
 		Remote: NewRemoteService(
-			syncService,
 			repository,
 		),
 	}

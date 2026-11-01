@@ -8,6 +8,7 @@ import (
 	"github.com/tacenva/database"
 	tacenvaentity "github.com/tacenva/tacenva-core/entity"
 	"github.com/tacenva/tacenva-core/sync"
+	"github.com/tacenva/tacenva-core/transactionmanager"
 	"github.com/tacenva/tacpass-core/contract"
 	"github.com/tacenva/tacpass-core/entity"
 	"gorm.io/gorm"
@@ -18,9 +19,13 @@ type repository struct {
 	db          *gorm.DB
 }
 
-func NewRepository(db *gorm.DB) *repository {
+func NewRepository(
+	db *gorm.DB,
+	syncService *sync.Service,
+) *repository {
 	return &repository{
-		db: db,
+		db:          db,
+		syncService: syncService,
 	}
 }
 
@@ -151,49 +156,81 @@ func (r *repository) GetChangesAfter(
 	}, nil
 }
 
-func (r *repository) ApplyChange(
-	vaultDir string,
-	vaultID string,
+func (r *repository) applyChange(
+	fileTx *database.DatabaseFile,
 	recordChange *contract.PendingVaultRecordChange,
 ) error {
 	if recordChange == nil {
+		// log.Printf("[ApplyChange] no changes to apply")
 		return nil
 	}
 
-	db := database.New(vaultDir)
-
-	fileDB, err := db.NewRawFile(vaultID)
-	if err != nil {
-		return err
-	}
+	// log.Printf(
+	// 	"[ApplyChange] started: total=%d",
+	// 	len(recordChange.SyncChanges),
+	// )
 
 	for _, change := range recordChange.SyncChanges {
 		recordID := change.EntityID
 		encryptedRecord := recordChange.EncryptedRecords[recordID]
+
+		// log.Printf(
+		// 	"[ApplyChange] processing: index=%d/%d, record_id=%s, operation=%s",
+		// 	i+1,
+		// 	len(recordChange.SyncChanges),
+		// 	recordID,
+		// 	change.Operation,
+		// )
+
 		switch change.Operation {
 		case tacenvaentity.OperationCreate:
-			err := fileDB.InsertRaw(&recordID, encryptedRecord)
-			if err != nil {
+			// log.Printf("[ApplyChange] inserting record: %s", recordID)
+
+			if err := fileTx.InsertRaw(&recordID, encryptedRecord); err != nil {
+				// log.Printf("[ApplyChange] insert failed: record_id=%s, error=%v", recordID, err)
 				return err
 			}
 
+			// log.Printf("[ApplyChange] insert completed: %s", recordID)
+
 		case tacenvaentity.OperationUpdate:
-			err := fileDB.UpdateRaw(recordID, encryptedRecord)
-			if err != nil {
+			// log.Printf("[ApplyChange] updating record: %s", recordID)
+
+			if err := fileTx.UpdateRaw(recordID, encryptedRecord); err != nil {
 				if !errors.Is(err, database.ErrRecordNotFound) {
+					// log.Printf("[ApplyChange] update failed: record_id=%s, error=%v", recordID, err)
 					return err
 				}
+
+				// log.Printf("[ApplyChange] update skipped, record not found: %s", recordID)
+			} else {
+				// log.Printf("[ApplyChange] update completed: %s", recordID)
 			}
 
 		case tacenvaentity.OperationDelete:
-			err := fileDB.DeleteRaw(recordID)
-			if err != nil {
+			// log.Printf("[ApplyChange] deleting record: %s", recordID)
+
+			if err := fileTx.DeleteRaw(recordID); err != nil {
 				if !errors.Is(err, database.ErrRecordNotFound) {
+					// log.Printf("[ApplyChange] delete failed: record_id=%s, error=%v", recordID, err)
 					return err
 				}
+
+				// log.Printf("[ApplyChange] delete skipped, record not found: %s", recordID)
+			} else {
+				// log.Printf("[ApplyChange] delete completed: %s", recordID)
 			}
+
+		default:
+			// log.Printf(
+			// 	"[ApplyChange] unknown operation: record_id=%s, operation=%s",
+			// 	recordID,
+			// 	change.Operation,
+			// )
 		}
 	}
+
+	// log.Printf("[ApplyChange] completed")
 
 	return nil
 }
@@ -224,7 +261,7 @@ func (r *repository) GetSyncLatestChangeId(
 	return syncState.LastChangeID, err
 }
 
-func (r *repository) MergePendingVaultRecordChange(
+func (r *repository) mergePendingVaultRecordChange(
 	base *contract.PendingVaultRecordChange,
 	comp *contract.PendingVaultRecordChange,
 ) *contract.PendingVaultRecordChange {
@@ -255,17 +292,27 @@ func (r *repository) MergePendingVaultRecordChange(
 }
 
 func (r *repository) insertSyncChanges(
+	tx *gorm.DB,
 	sotID string,
 	vaultID string,
 	syncChanges []tacenvaentity.SyncChange,
 ) error {
 	entityName := r.getEntityName(vaultID)
 	return r.syncService.InsertSyncChanges(
+		tx,
 		sotID,
 		entityName,
 		syncChanges,
 	)
 }
+
+// func countChanges(change *contract.PendingVaultRecordChange) int {
+// 	if change == nil {
+// 		return 0
+// 	}
+
+// 	return len(change.SyncChanges)
+// }
 
 func (r *repository) SyncOnReplica(
 	vaultDir string,
@@ -274,19 +321,93 @@ func (r *repository) SyncOnReplica(
 	changeBase *contract.PendingVaultRecordChange,
 	changeComp *contract.PendingVaultRecordChange,
 ) error {
-	appliedChanges := r.MergePendingVaultRecordChange(
+	// startedAt := time.Now()
+
+	// log.Printf("[SyncOnReplica] started: vault_id=%s", vaultID)
+
+	// log.Printf("[SyncOnReplica] merging pending changes")
+
+	appliedChanges := r.mergePendingVaultRecordChange(
 		changeBase,
 		changeComp,
 	)
+
 	if appliedChanges == nil {
+		// log.Printf("[SyncOnReplica] no changes to apply")
 		return nil
 	}
 
-	if err := r.ApplyChange(vaultDir, vaultID, appliedChanges); err != nil {
+	// log.Printf(
+	// 	"[SyncOnReplica] merge completed: base=%d, comp=%d, applied=%d",
+	// 	countChanges(changeBase),
+	// 	countChanges(changeComp),
+	// 	countChanges(appliedChanges),
+	// )
+
+	// log.Printf("[SyncOnReplica] creating database instance")
+
+	db := database.New(vaultDir)
+
+	// log.Printf("[SyncOnReplica] opening raw vault file")
+
+	vaultFile, err := db.NewRawFile(vaultID)
+	if err != nil {
+		// log.Printf("[SyncOnReplica] failed to open vault file: %v", err)
 		return err
 	}
 
-	return r.insertSyncChanges(sotID, vaultID, changeBase.SyncChanges)
+	// log.Printf("[SyncOnReplica] raw vault file opened")
+
+	// log.Printf("[SyncOnReplica] starting transaction")
+
+	err = transactionmanager.Transaction(
+		r.db,
+		vaultFile,
+		func(gormTx *gorm.DB, fileTx *database.DatabaseFile) error {
+			// log.Printf("[SyncOnReplica] transaction started")
+
+			// log.Printf("[SyncOnReplica] applying changes")
+
+			if err := r.applyChange(
+				fileTx,
+				appliedChanges,
+			); err != nil {
+				// log.Printf("[SyncOnReplica] apply changes failed: %v", err)
+				return err
+			}
+
+			// log.Printf("[SyncOnReplica] changes applied")
+
+			// log.Printf("[SyncOnReplica] inserting sync changes")
+
+			if err := r.insertSyncChanges(
+				gormTx,
+				sotID,
+				vaultID,
+				changeBase.SyncChanges,
+			); err != nil {
+				// log.Printf("[SyncOnReplica] insert sync changes failed: %v", err)
+				return err
+			}
+
+			// log.Printf("[SyncOnReplica] sync changes inserted")
+
+			return nil
+		},
+	)
+
+	if err != nil {
+		// log.Printf("[SyncOnReplica] transaction failed: %v", err)
+		return err
+	}
+
+	// log.Printf(
+	// 	"[SyncOnReplica] completed: vault_id=%s, duration=%s",
+	// 	vaultID,
+	// 	time.Since(startedAt),
+	// )
+
+	return nil
 }
 
 func (r *repository) SetSyncStateToBeLatest(
@@ -335,7 +456,7 @@ func (r *repository) SyncOnSot(
 		return err
 	}
 
-	appliedChanges := r.MergePendingVaultRecordChange(
+	appliedChanges := r.mergePendingVaultRecordChange(
 		replicaChanges,
 		sotChanges,
 	)
@@ -343,17 +464,36 @@ func (r *repository) SyncOnSot(
 		return nil
 	}
 
-	if err := r.ApplyChange(vaultDir, vaultID, appliedChanges); err != nil {
+	db := database.New(vaultDir)
+	vaultFile, err := db.NewRawFile(vaultID)
+	if err != nil {
 		return err
 	}
+	return transactionmanager.Transaction(
+		r.db,
+		vaultFile,
+		func(gormTx *gorm.DB, fileTx *database.DatabaseFile) error {
+			if err := r.applyChange(
+				fileTx,
+				appliedChanges,
+			); err != nil {
+				return err
+			}
 
-	for i := range replicaChanges.SyncChanges {
-		replicaChanges.SyncChanges[i].ChangedBy = authorizer.Hostname
-	}
+			for i := range replicaChanges.SyncChanges {
+				replicaChanges.SyncChanges[i].ChangedBy = authorizer.Hostname
+			}
 
-	if err = r.insertSyncChanges(sotID, vaultID, replicaChanges.SyncChanges); err != nil {
-		return err
-	}
+			if err = r.insertSyncChanges(
+				gormTx,
+				sotID,
+				vaultID,
+				replicaChanges.SyncChanges,
+			); err != nil {
+				return err
+			}
 
-	return nil
+			return nil
+		},
+	)
 }

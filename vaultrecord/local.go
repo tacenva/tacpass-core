@@ -6,6 +6,7 @@ import (
 	"github.com/tacenva/database"
 	tacenvaentity "github.com/tacenva/tacenva-core/entity"
 	"github.com/tacenva/tacenva-core/sync"
+	"github.com/tacenva/tacenva-core/transactionmanager"
 	"github.com/tacenva/tacpass-core/contract"
 	tacpassentity "github.com/tacenva/tacpass-core/entity"
 	"gorm.io/gorm"
@@ -21,16 +22,46 @@ type Local struct {
 	vaultRecordFile    *database.DatabaseFile
 	entityName         *string
 	sotID              *string
+
+	VaultFileExist    bool
+	unwrappedVaultKey string
 }
 
 func NewLocalService(
-	syncService *sync.Service,
 	repository *repository,
 ) *Local {
 	return &Local{
-		syncService: syncService,
-		repository:  repository,
+		repository:     repository,
+		syncService:    repository.syncService,
+		VaultFileExist: false,
 	}
+}
+
+func (s *Local) OpenVaultDbFile() error {
+	db := database.New(s.currentVaultDir)
+
+	vaultRawRecordFile, err := db.NewRawFile(*s.vaultID)
+	if err != nil {
+		s.VaultFileExist = false
+		return err
+	}
+
+	vaultRecordFile, err := db.File(
+		*s.vaultID,
+		s.unwrappedVaultKey,
+		database.FileModeOpen,
+	)
+	if err != nil {
+		s.VaultFileExist = false
+		return err
+	}
+
+	s.vaultRawRecordFile = vaultRawRecordFile
+	s.vaultRecordFile = vaultRecordFile
+	s.VaultFileExist = true
+	s.unwrappedVaultKey = ""
+
+	return nil
 }
 
 func (s *Local) SetConfig(
@@ -41,30 +72,14 @@ func (s *Local) SetConfig(
 ) error {
 	s.currentVaultDir = vaultDir
 	s.vaultID = &vaultID
-
-	db := database.New(s.currentVaultDir)
-	vaultRawRecordFile, err := db.NewRawFile(
-		vaultID,
-	)
-	if err != nil {
-		return err
-	}
-	s.vaultRawRecordFile = vaultRawRecordFile
-
-	vaultRecordFile, err := db.File(
-		vaultID,
-		unwrappedVaultKey,
-		database.FileModeOpen,
-	)
-	if err != nil {
-		return err
-	}
-	s.vaultRecordFile = vaultRecordFile
-
 	s.entityName = new(string)
 	*s.entityName = syncEntityVaultRecord + ":" + vaultID
-
 	s.sotID = &sotID
+	s.unwrappedVaultKey = unwrappedVaultKey
+
+	if err := s.OpenVaultDbFile(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -198,27 +213,29 @@ func (s *Local) create(
 		return ErrRecordDataEmpty
 	}
 
-	err := s.vaultRawRecordFile.InsertRaw(recordID, data)
-	if err != nil {
-		return err
-	}
+	return transactionmanager.Transaction(
+		s.repository.db,
+		s.vaultRawRecordFile,
+		func(gormTx *gorm.DB, fileTx *database.DatabaseFile) error {
+			if err := fileTx.InsertRaw(recordID, data); err != nil {
+				return err
+			}
 
-	err = s.syncService.Transaction(func(tx *gorm.DB) error {
-		return s.syncService.RecordChange(
-			tx,
-			lastChangeID,
-			*s.entityName,
-			*recordID,
-			tacenvaentity.OperationCreate,
-			*s.sotID,
-			changeBy,
-		)
-	})
-	if err != nil {
-		return err
-	}
+			if err := s.syncService.RecordChange(
+				gormTx,
+				lastChangeID,
+				*s.entityName,
+				*recordID,
+				tacenvaentity.OperationCreate,
+				*s.sotID,
+				changeBy,
+			); err != nil {
+				return err
+			}
 
-	return nil
+			return nil
+		},
+	)
 }
 
 func (s *Local) update(
@@ -231,24 +248,31 @@ func (s *Local) update(
 		return ErrRecordDataEmpty
 	}
 
-	if err := s.vaultRawRecordFile.UpdateRaw(
-		recordID,
-		data,
-	); err != nil {
-		return err
-	}
+	return transactionmanager.Transaction(
+		s.repository.db,
+		s.vaultRawRecordFile,
+		func(gormTx *gorm.DB, fileTx *database.DatabaseFile) error {
+			if err := fileTx.UpdateRaw(
+				recordID,
+				data,
+			); err != nil {
+				return err
+			}
 
-	return s.syncService.Transaction(func(tx *gorm.DB) error {
-		return s.syncService.RecordChange(
-			tx,
-			lastChangeID,
-			*s.entityName,
-			recordID,
-			tacenvaentity.OperationUpdate,
-			*s.sotID,
-			changeBy,
-		)
-	})
+			if err := s.syncService.RecordChange(
+				gormTx,
+				lastChangeID,
+				*s.entityName,
+				recordID,
+				tacenvaentity.OperationUpdate,
+				*s.sotID,
+				changeBy,
+			); err != nil {
+				return err
+			}
+			return nil
+		},
+	)
 }
 
 func (s *Local) delete(
@@ -256,21 +280,28 @@ func (s *Local) delete(
 	lastChangeID *string,
 	changeBy string,
 ) error {
-	if err := s.vaultRawRecordFile.DeleteRaw(recordID); err != nil {
-		return err
-	}
+	return transactionmanager.Transaction(
+		s.repository.db,
+		s.vaultRawRecordFile,
+		func(gormTx *gorm.DB, fileTx *database.DatabaseFile) error {
+			if err := fileTx.DeleteRaw(recordID); err != nil {
+				return err
+			}
 
-	return s.syncService.Transaction(func(tx *gorm.DB) error {
-		return s.syncService.RecordChange(
-			tx,
-			lastChangeID,
-			*s.entityName,
-			recordID,
-			tacenvaentity.OperationDelete,
-			*s.sotID,
-			changeBy,
-		)
-	})
+			if err := s.syncService.RecordChange(
+				gormTx,
+				lastChangeID,
+				*s.entityName,
+				recordID,
+				tacenvaentity.OperationDelete,
+				*s.sotID,
+				changeBy,
+			); err != nil {
+				return err
+			}
+			return nil
+		},
+	)
 }
 
 func (s *Local) List() ([]tacpassentity.VaultRecord, error) {
@@ -353,4 +384,16 @@ func (s *Local) SetSyncStateToBeLatest() error {
 		*s.sotID,
 		*s.vaultID,
 	)
+}
+
+func (s *Local) StoreBlob(
+	data []byte,
+) error {
+	db := database.New(s.currentVaultDir)
+	err := db.Write(*s.vaultID, data)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

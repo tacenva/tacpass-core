@@ -17,7 +17,7 @@ func NewRepository(db *gorm.DB) *repository {
 	}
 }
 
-func (r *repository) CreateTx(
+func (r *repository) Create(
 	tx *gorm.DB,
 	vaultAccess *entity.VaultAccess,
 ) error {
@@ -25,18 +25,6 @@ func (r *repository) CreateTx(
 }
 
 func (r *repository) CreateBulk(
-	vaultAccesses []*entity.VaultAccess,
-) error {
-	if len(vaultAccesses) == 0 {
-		return nil
-	}
-
-	return r.db.
-		CreateInBatches(vaultAccesses, 100).
-		Error
-}
-
-func (r *repository) CreateBulkTx(
 	tx *gorm.DB,
 	vaultAccesses []entity.VaultAccess,
 ) error {
@@ -49,7 +37,7 @@ func (r *repository) CreateBulkTx(
 		Error
 }
 
-func (r *repository) DeleteBulkTx(
+func (r *repository) DeleteBulk(
 	tx *gorm.DB,
 	vaultID string,
 	toDelete []string,
@@ -62,43 +50,6 @@ func (r *repository) DeleteBulkTx(
 		Where("vault_id = ? AND access_group_id IN ?", vaultID, toDelete).
 		Delete(&tacpassentity.VaultAccess{}).Error
 }
-
-// func (r *repository) Upsert(
-// 	tx *gorm.DB,
-// 	vaultAccesses []entity.VaultAccess,
-// ) error {
-// 	if len(vaultAccesses) == 0 {
-// 		return nil
-// 	}
-
-// 	records := make([]entity.VaultAccess, 0, len(vaultAccesses))
-
-// 	for _, item := range vaultAccesses {
-// 		if item.ID == "" {
-// 			return gorm.ErrInvalidData
-// 		}
-
-// 		records = append(records, item)
-// 	}
-
-// 	if len(records) == 0 {
-// 		return nil
-// 	}
-
-// 	return tx.
-// 		Clauses(clause.OnConflict{
-// 			Columns: []clause.Column{
-// 				{Name: "id"},
-// 			},
-// 			DoUpdates: clause.AssignmentColumns([]string{
-// 				"vault_id",
-// 				"access_unit_id",
-// 				"vault_key",
-// 			}),
-// 		}).
-// 		Create(&records).
-// 		Error
-// }
 
 func (r *repository) DeleteMissing(
 	tx *gorm.DB,
@@ -144,5 +95,3 @@ func (r *repository) FindByVault(
 
 	return result, nil
 }
-
-// func (r *repository)

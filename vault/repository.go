@@ -144,7 +144,7 @@ func (r *repository) IsAllowedToChange(
 
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, nil
+			return true, nil
 		}
 		return false, err
 	}

@@ -3,7 +3,6 @@ package vault
 import (
 	"errors"
 	"fmt"
-	"log"
 	"slices"
 	"strings"
 
@@ -11,17 +10,20 @@ import (
 	"github.com/tacenva/database"
 	tacenvaentity "github.com/tacenva/tacenva-core/entity"
 	"github.com/tacenva/tacenva-core/sync"
+	"github.com/tacenva/tacenva-core/transactionmanager"
 	"github.com/tacenva/tacenva-core/util/credential"
 	"github.com/tacenva/tacenva-core/util/keyring"
 	"github.com/tacenva/tacpass-core/contract"
 	"github.com/tacenva/tacpass-core/entity"
 	tacpassentity "github.com/tacenva/tacpass-core/entity"
 	"github.com/tacenva/tacpass-core/vaultrecord"
+	"gorm.io/gorm"
 )
 
 type ReplicaService struct {
 	vaultRecordService *vaultrecord.Service
 	syncService        *sync.Service
+	repository         *repository
 
 	currentVaultDir *string
 	tacenvaDB       *database.DB
@@ -29,12 +31,14 @@ type ReplicaService struct {
 }
 
 func NewReplicaService(
+	repository *repository,
 	vaultRecordService *vaultrecord.Service,
 	syncService *sync.Service,
 ) *ReplicaService {
 	return &ReplicaService{
 		vaultRecordService: vaultRecordService,
 		syncService:        syncService,
+		repository:         repository,
 	}
 }
 
@@ -76,20 +80,32 @@ func (s *ReplicaService) Create(
 	wrappedVaultKey, err := keyPairOfAccessGroup.Seal([]byte(vaultKey))
 	vault.WrappedKey = wrappedVaultKey
 
-	if err := s.vaultFile.Insert(vault).Error; err != nil {
+	err = transactionmanager.Transaction(
+		s.repository.db,
+		s.vaultFile,
+		func(gormTx *gorm.DB, fileTx *database.DatabaseFile) error {
+			err = fileTx.Insert(vault).Error
+			if err != nil {
+				return err
+			}
+
+			if err := s.syncService.RecordChange(
+				gormTx,
+				lastChangeID,
+				syncEntityVault,
+				vault.ID,
+				tacenvaentity.OperationCreate,
+				sotID,
+				"",
+			); err != nil {
+				return err
+			}
+			return nil
+		})
+	if err != nil {
 		return err
 	}
 
-	if err := s.syncService.RecordChangeWithoutTx(
-		lastChangeID,
-		syncEntityVault,
-		vault.ID,
-		tacenvaentity.OperationCreate,
-		sotID,
-		"",
-	); err != nil {
-		return err
-	}
 	if err := s.vaultRecordService.Local.Init(*s.currentVaultDir, vault.ID, vaultKey); err != nil {
 		return err
 	}
@@ -113,23 +129,28 @@ func (s *ReplicaService) Update(
 		return ErrNameEmpty
 	}
 
-	result := s.vaultFile.Update(vault)
-	if result.Error != nil {
-		return result.Error
-	}
+	return transactionmanager.Transaction(
+		s.repository.db,
+		s.vaultFile,
+		func(gormTx *gorm.DB, fileTx *database.DatabaseFile) error {
+			result := fileTx.Update(vault)
+			if result.Error != nil {
+				return result.Error
+			}
 
-	if err := s.syncService.RecordChangeWithoutTx(
-		lastChangeID,
-		syncEntityVault,
-		vault.ID,
-		tacenvaentity.OperationUpdate,
-		sotID,
-		"",
-	); err != nil {
-		return err
-	}
-
-	return nil
+			if err := s.syncService.RecordChange(
+				gormTx,
+				lastChangeID,
+				syncEntityVault,
+				vault.ID,
+				tacenvaentity.OperationUpdate,
+				sotID,
+				"local",
+			); err != nil {
+				return err
+			}
+			return nil
+		})
 }
 
 func (s *ReplicaService) Delete(
@@ -143,18 +164,29 @@ func (s *ReplicaService) Delete(
 		return ErrNotFound
 	}
 
-	if err := s.vaultFile.Delete(vaultID).Error; err != nil {
-		return err
-	}
+	err := transactionmanager.Transaction(
+		s.repository.db,
+		s.vaultFile,
+		func(gormTx *gorm.DB, fileTx *database.DatabaseFile) error {
+			if err := fileTx.Delete(vaultID).Error; err != nil {
+				return err
+			}
 
-	if err := s.syncService.RecordChangeWithoutTx(
-		lastChangeID,
-		syncEntityVault,
-		vaultID,
-		tacenvaentity.OperationDelete,
-		sotID,
-		"",
-	); err != nil {
+			if err := s.syncService.RecordChange(
+				gormTx,
+				lastChangeID,
+				syncEntityVault,
+				vaultID,
+				tacenvaentity.OperationDelete,
+				sotID,
+				"",
+			); err != nil {
+				return err
+			}
+
+			return nil
+		})
+	if err != nil {
 		return err
 	}
 
@@ -248,6 +280,7 @@ func (s *ReplicaService) GetChangesAfter(
 }
 
 func (s *ReplicaService) applyChanges(
+	fileTx *database.DatabaseFile,
 	replicaAccessGroupID string,
 	appliedChanges *contract.PendingVaultChange,
 ) error {
@@ -302,7 +335,7 @@ func (s *ReplicaService) applyChanges(
 
 			// debug.LogJSON("vault create sync", vault)
 
-			err = s.vaultFile.Insert(vault).Error
+			err = fileTx.Insert(vault).Error
 			if err != nil {
 				return err
 			}
@@ -319,7 +352,7 @@ func (s *ReplicaService) applyChanges(
 
 			// debug.LogJSON("vault update sync", vault)
 
-			err = s.vaultFile.Update(vault).Error
+			err = fileTx.Update(vault).Error
 			if err != nil {
 				if errors.Is(err, database.ErrRecordNotFound) {
 					continue
@@ -329,7 +362,7 @@ func (s *ReplicaService) applyChanges(
 			}
 
 		case tacenvaentity.OperationDelete:
-			err := s.vaultFile.Delete(vaultID).Error
+			err := fileTx.Delete(vaultID).Error
 			if err != nil {
 				if errors.Is(err, database.ErrRecordNotFound) {
 					continue
@@ -387,21 +420,30 @@ func (s *ReplicaService) Sync(
 		return nil
 	}
 
-	if err := s.applyChanges(replicaAccessGroupID, &contract.PendingVaultChange{
-		SyncChanges:         appliedChanges,
-		VaultChangeDataList: appliedData,
-	}); err != nil {
-		return err
-	}
+	return transactionmanager.Transaction(
+		s.repository.db,
+		s.vaultFile,
+		func(gormTx *gorm.DB, fileTx *database.DatabaseFile) error {
+			if err := s.applyChanges(
+				fileTx,
+				replicaAccessGroupID,
+				&contract.PendingVaultChange{
+					SyncChanges:         appliedChanges,
+					VaultChangeDataList: appliedData,
+				}); err != nil {
+				return err
+			}
 
-	log.Printf("replica access GroupID %s", replicaAccessGroupID)
+			// log.Printf("replica access GroupID %s", replicaAccessGroupID)
+			// debug.LogJSON("applied data", appliedData)
 
-	// debug.LogJSON("applied data", appliedData)
-	return s.syncService.InsertSyncChanges(
-		sotID,
-		syncEntityVault,
-		sotSyncChanges,
-	)
+			return s.syncService.InsertSyncChanges(
+				gormTx,
+				sotID,
+				syncEntityVault,
+				sotSyncChanges,
+			)
+		})
 }
 
 func (s *ReplicaService) GetWrappedKey(
