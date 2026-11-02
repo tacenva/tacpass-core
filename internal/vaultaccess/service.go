@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/tacenva/tacenva-core/entity"
 	tacenvaentity "github.com/tacenva/tacenva-core/entity"
 	"github.com/tacenva/tacenva-core/util/keyring"
 	tacpassentity "github.com/tacenva/tacpass-core/entity"
@@ -21,7 +20,7 @@ type Service struct {
 
 	AllAccessGroup func(
 		sotID string,
-	) ([]entity.AccessGroup, error)
+	) ([]tacenvaentity.AccessGroup, error)
 }
 
 func NewService(
@@ -34,7 +33,7 @@ func NewService(
 
 	List func(
 		sotID string,
-	) ([]entity.AccessGroup, error),
+	) ([]tacenvaentity.AccessGroup, error),
 ) *Service {
 	return &Service{
 		repository:        repository,

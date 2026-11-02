@@ -12,7 +12,7 @@ type VaultChangeData struct {
 	VaultAccessList []entity.VaultAccess `json:"vault_accesses,omitempty"`
 }
 
-type PendingVaultChange struct { // restructure sih ini, ada perubahan khusus vault, ada khusus vaultaccess
+type PendingVaultChange struct {
 	SyncChanges         []tacenvaentity.SyncChange  `json:"sync_changes"`
 	VaultChangeDataList map[VaultID]VaultChangeData `json:"vault_change_data_list,omitempty"`
 }

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/tacenva/tacpass-core/entity"
+	tacpassentity "github.com/tacenva/tacpass-core/entity"
 	"gorm.io/gorm"
 )
 
@@ -18,33 +18,17 @@ func NewRepository(db *gorm.DB) *repository {
 	}
 }
 
-func (r *repository) Transaction(
-	fn func(tx *gorm.DB) error,
-) error {
-	return r.db.Transaction(fn)
-}
-
 func (r *repository) Create(
 	tx *gorm.DB,
-	vault *entity.Vault,
+	vault *tacpassentity.Vault,
 ) error {
 	return tx.Create(vault).Error
 }
 
-func (r *repository) CreateBulk(
-	tx *gorm.DB,
-	vaults []entity.Vault,
-) error {
-	if len(vaults) == 0 {
-		return nil
-	}
-	return tx.CreateInBatches(vaults, 1000).Error
-}
-
 func (r *repository) FindByID(
 	id string,
-) (*entity.Vault, error) {
-	var vault entity.Vault
+) (*tacpassentity.Vault, error) {
+	var vault tacpassentity.Vault
 
 	err := r.db.
 		Where("id = ?", id).
@@ -60,8 +44,8 @@ func (r *repository) FindByID(
 
 func (r *repository) FindAccessible(
 	groupID string,
-) ([]entity.Vault, error) {
-	var vaults []entity.Vault
+) ([]tacpassentity.Vault, error) {
+	var vaults []tacpassentity.Vault
 
 	err := r.db.
 		Where(`
@@ -90,7 +74,7 @@ func (r *repository) FindAccessible(
 
 func (r *repository) Update(
 	tx *gorm.DB,
-	vault *entity.Vault,
+	vault *tacpassentity.Vault,
 ) *gorm.DB {
 	groupIDsJSON, err := json.Marshal(vault.GroupIDs)
 	if err != nil {
@@ -100,7 +84,7 @@ func (r *repository) Update(
 	}
 
 	return tx.
-		Model(&entity.Vault{}).
+		Model(&tacpassentity.Vault{}).
 		Where("id = ?", vault.ID).
 		Updates(map[string]interface{}{
 			"name":      vault.Name,
@@ -114,7 +98,7 @@ func (r *repository) Delete(
 ) error {
 	return tx.
 		Where("id = ?", id).
-		Delete(&entity.Vault{}).
+		Delete(&tacpassentity.Vault{}).
 		Error
 }
 
@@ -122,7 +106,7 @@ func (r *repository) IsAllowedToChange(
 	vaultID string,
 	groupID string,
 ) (bool, error) {
-	var vault entity.Vault
+	var vault tacpassentity.Vault
 
 	err := r.db.
 		Where(`

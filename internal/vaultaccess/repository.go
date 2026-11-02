@@ -1,8 +1,6 @@
 package vaultaccess
 
 import (
-	tacenvaentity "github.com/tacenva/tacenva-core/entity"
-	"github.com/tacenva/tacpass-core/entity"
 	tacpassentity "github.com/tacenva/tacpass-core/entity"
 	"gorm.io/gorm"
 )
@@ -17,16 +15,16 @@ func NewRepository(db *gorm.DB) *repository {
 	}
 }
 
-func (r *repository) Create(
-	tx *gorm.DB,
-	vaultAccess *entity.VaultAccess,
-) error {
-	return tx.Create(vaultAccess).Error
-}
+// func (r *repository) Create(
+// 	tx *gorm.DB,
+// 	vaultAccess *entity.VaultAccess,
+// ) error {
+// 	return tx.Create(vaultAccess).Error
+// }
 
 func (r *repository) CreateBulk(
 	tx *gorm.DB,
-	vaultAccesses []entity.VaultAccess,
+	vaultAccesses []tacpassentity.VaultAccess,
 ) error {
 	if len(vaultAccesses) == 0 {
 		return nil
@@ -51,18 +49,18 @@ func (r *repository) DeleteBulk(
 		Delete(&tacpassentity.VaultAccess{}).Error
 }
 
-func (r *repository) DeleteMissing(
-	tx *gorm.DB,
-	incomingIDs []string,
-) error {
-	if len(incomingIDs) > 0 {
-		return nil
-	}
-	return tx.
-		Where("id NOT IN ?", incomingIDs).
-		Delete(&tacenvaentity.AccessGroup{}).
-		Error
-}
+// func (r *repository) DeleteMissing(
+// 	tx *gorm.DB,
+// 	incomingIDs []string,
+// ) error {
+// 	if len(incomingIDs) > 0 {
+// 		return nil
+// 	}
+// 	return tx.
+// 		Where("id NOT IN ?", incomingIDs).
+// 		Delete(&tacenvaentity.AccessGroup{}).
+// 		Error
+// }
 
 func (r *repository) FindByVaultAndAccessGroup(
 	vaultID string,

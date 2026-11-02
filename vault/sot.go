@@ -85,7 +85,7 @@ func (s *SotService) Create(
 		return err
 	}
 
-	err = s.repository.Transaction(func(tx *gorm.DB) error {
+	err = s.repository.db.Transaction(func(tx *gorm.DB) error {
 		err := s.create(tx, vault, vaultAccessList)
 		if err != nil {
 			return err
@@ -168,7 +168,7 @@ func (s *SotService) Update(
 		return err
 	}
 
-	return s.repository.Transaction(func(tx *gorm.DB) error {
+	return s.repository.db.Transaction(func(tx *gorm.DB) error {
 		err := s.update(tx, vault, vaultAccessList)
 		if err != nil {
 			return err
@@ -227,7 +227,7 @@ func (s *SotService) Delete(
 		return ErrNotFound
 	}
 
-	return s.repository.Transaction(func(tx *gorm.DB) error {
+	return s.repository.db.Transaction(func(tx *gorm.DB) error {
 		err := s.delete(tx, vault.ID)
 		if err != nil {
 			return err
