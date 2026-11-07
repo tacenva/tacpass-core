@@ -1,11 +1,11 @@
 module github.com/tacenva/tacpass-core
 
-go 1.26.5
+go 1.27.2
 
 require (
-	github.com/BurntSushi/toml v1.6.0
 	github.com/oklog/ulid/v2 v2.1.2
-	github.com/tacenva/database v1.0.0-alpha.2
+	github.com/tacenva/database v1.0.0-alpha.5
+	github.com/tacenva/tacenva-core v1.0.0-alpha.1
 	gorm.io/gorm v1.31.2
 )
 
