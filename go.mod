@@ -5,7 +5,7 @@ go 1.27.2
 require (
 	github.com/oklog/ulid/v2 v2.1.2
 	github.com/tacenva/database v1.0.0-alpha.5
-	github.com/tacenva/tacenva-core v1.0.0-alpha.2
+	github.com/tacenva/tacenva-core v1.0.0-alpha.3
 	gorm.io/gorm v1.31.2
 )
 
