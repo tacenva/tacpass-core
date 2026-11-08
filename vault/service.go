@@ -110,9 +110,11 @@ func (s *Service) SetSyncStateToBeLatest(
 }
 
 func (s *Service) AllAccessGroup(
+	groupID string,
 	sotID string,
 ) ([]tacenvaentity.AccessGroup, error) {
 	return s.vaultaccessService.AllAccessGroup(
+		groupID,
 		sotID,
 	)
 }

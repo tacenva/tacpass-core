@@ -481,7 +481,7 @@ func (r *repository) SyncOnSot(
 			}
 
 			for i := range replicaChanges.SyncChanges {
-				replicaChanges.SyncChanges[i].ChangedBy = authorizer.Hostname
+				replicaChanges.SyncChanges[i].ChangedBy = authorizer.IdentityKey()
 			}
 
 			if err = r.insertSyncChanges(

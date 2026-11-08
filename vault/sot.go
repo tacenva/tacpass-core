@@ -101,7 +101,7 @@ func (s *SotService) Create(
 			vault.ID,
 			tacenvaentity.OperationCreate,
 			authorizedUser.AccessUnit.SotID,
-			authorizedUser.ID+":"+authorizedUser.Hostname,
+			authorizedUser.IdentityKey(),
 		); err != nil {
 			return err
 		}
@@ -181,7 +181,7 @@ func (s *SotService) Update(
 			vault.ID,
 			tacenvaentity.OperationUpdate,
 			authorizedUser.AccessUnit.SotID,
-			authorizedUser.ID+":"+authorizedUser.Hostname,
+			authorizedUser.IdentityKey(),
 		)
 	})
 }
@@ -240,7 +240,7 @@ func (s *SotService) Delete(
 			vault.ID,
 			tacenvaentity.OperationDelete,
 			sotID,
-			authorizedUser.ID+":"+authorizedUser.Hostname,
+			authorizedUser.IdentityKey(),
 		); err != nil {
 			return err
 		}

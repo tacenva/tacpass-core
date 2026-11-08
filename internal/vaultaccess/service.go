@@ -19,6 +19,7 @@ type Service struct {
 	) (map[string]string, error)
 
 	AllAccessGroup func(
+		groupID string,
 		sotID string,
 	) ([]tacenvaentity.AccessGroup, error)
 }
@@ -31,14 +32,15 @@ func NewService(
 		groupIDs []string,
 	) (map[string]string, error),
 
-	List func(
+	AllAccessGroup func(
+		groupID string,
 		sotID string,
 	) ([]tacenvaentity.AccessGroup, error),
 ) *Service {
 	return &Service{
 		repository:        repository,
 		PublicKeyOfGroups: PublicKeyOfGroups,
-		AllAccessGroup:    List,
+		AllAccessGroup:    AllAccessGroup,
 	}
 }
 

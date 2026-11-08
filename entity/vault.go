@@ -8,11 +8,12 @@ import (
 )
 
 type VaultRecord struct {
-	ID        string    `json:"id,omitempty"`
-	Name      string    `json:"name,omitempty"`
-	Endpoint  string    `json:"endpoint,omitempty"`
-	Password  string    `json:"password,omitempty"`
-	ExpiredAt time.Time `json:"expired_at,omitempty"`
+	ID          string    `json:"id,omitempty"`
+	Identifier  string    `json:"identifier,omitempty"`
+	Endpoint    string    `json:"endpoint,omitempty"`
+	Password    string    `json:"password,omitempty"`
+	RenewalDate time.Time `json:"renewal_date,omitempty"`
+	UpdatedAt   time.Time `json:"updated_at,omitempty"`
 }
 
 type Vault struct {

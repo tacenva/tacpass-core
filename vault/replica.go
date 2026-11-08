@@ -290,7 +290,7 @@ func (s *ReplicaService) applyChanges(
 		accessGroupID string,
 	) (*tacpassentity.Vault, error) {
 		if len(vaultChangeData.VaultAccessList) == 0 {
-			return nil, errors.New("vault access list is empty")
+			return nil, nil
 		}
 
 		vault := vaultChangeData.Vault
