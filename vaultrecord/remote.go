@@ -7,6 +7,7 @@ import (
 	tacenvaentity "github.com/tacenva/tacenva-core/entity"
 	"github.com/tacenva/tacenva-core/sync"
 	"github.com/tacenva/tacpass-core/contract"
+	"github.com/tacenva/tacpass-core/errormessage"
 )
 
 type Remote struct {
@@ -16,14 +17,25 @@ type Remote struct {
 	vaultDir        string
 	vaultRecordFile *database.DatabaseFile
 	sotID           *string
+
+	vaultAccessExists func(
+		vaultID string,
+		accessGroupID string,
+	) (bool, error)
 }
 
 func NewRemoteService(
 	repository *repository,
+
+	vaultAccessExists func(
+		vaultID string,
+		accessGroupID string,
+	) (bool, error),
 ) *Remote {
 	return &Remote{
-		repository:  repository,
-		syncService: repository.syncService,
+		repository:        repository,
+		syncService:       repository.syncService,
+		vaultAccessExists: vaultAccessExists,
 	}
 }
 
@@ -64,8 +76,10 @@ func (s *Remote) StoreBlob(
 	vaultID string,
 	data []byte,
 ) error {
-	if !authorizer.HasWriteAccess() {
-		return ErrForbidden
+	if err := s.verifyWriterAccess(
+		authorizer,
+	); err != nil {
+		return err
 	}
 
 	vaultID = strings.TrimSpace(vaultID)
@@ -86,7 +100,7 @@ func (s *Remote) StoreBlob(
 func (s *Remote) GetChangesAfter(
 	vaultID string,
 	startID string,
-	limit int,
+	limit int64,
 ) (*contract.PendingVaultRecordChange, error) {
 	return s.repository.GetChangesAfter(
 		s.vaultDir,
@@ -101,9 +115,22 @@ func (s *Remote) SyncOnSot(
 	authorizer *tacenvaentity.User,
 	vaultID string,
 	sotStartChangeID string,
-	limit int,
+	limit int64,
 	replicaChanges *contract.PendingVaultRecordChange,
-) (err error) {
+) error {
+	vaultID = strings.TrimSpace(vaultID)
+
+	if vaultID == "" {
+		return errormessage.ErrNotFound
+	}
+
+	if err := s.verifyVaultAccess(
+		authorizer,
+		vaultID,
+	); err != nil {
+		return err
+	}
+
 	return s.repository.SyncOnSot(
 		authorizer,
 		s.vaultDir,

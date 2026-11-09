@@ -2,7 +2,6 @@ package vault
 
 import (
 	"encoding/json"
-	"errors"
 
 	tacpassentity "github.com/tacenva/tacpass-core/entity"
 	"gorm.io/gorm"
@@ -102,36 +101,36 @@ func (r *repository) Delete(
 		Error
 }
 
-func (r *repository) IsAllowedToChange(
-	vaultID string,
-	groupID string,
-) (bool, error) {
-	var vault tacpassentity.Vault
+// func (r *repository) IsAllowedToChange(
+// 	vaultID string,
+// 	groupID string,
+// ) (bool, error) {
+// 	var vault tacpassentity.Vault
 
-	err := r.db.
-		Where(`
-			EXISTS (
-				SELECT 1
-				FROM json_each(
-					CASE
-						WHEN json_valid(vaults.group_ids)
-						THEN vaults.group_ids
-						ELSE '[]'
-					END
-				)
-				WHERE json_each.value = ?
-			)
-			AND vaults.id = ?
-		`, groupID, vaultID).
-		First(&vault).
-		Error
+// 	err := r.db.
+// 		Where(`
+// 			EXISTS (
+// 				SELECT 1
+// 				FROM json_each(
+// 					CASE
+// 						WHEN json_valid(vaults.group_ids)
+// 						THEN vaults.group_ids
+// 						ELSE '[]'
+// 					END
+// 				)
+// 				WHERE json_each.value = ?
+// 			)
+// 			AND vaults.id = ?
+// 		`, groupID, vaultID).
+// 		First(&vault).
+// 		Error
 
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return true, nil
-		}
-		return false, err
-	}
+// 	if err != nil {
+// 		if errors.Is(err, gorm.ErrRecordNotFound) {
+// 			return true, nil
+// 		}
+// 		return false, err
+// 	}
 
-	return true, nil
-}
+// 	return true, nil
+// }

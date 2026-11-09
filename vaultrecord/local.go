@@ -319,7 +319,7 @@ func (s *Local) List() ([]tacpassentity.VaultRecord, error) {
 
 func (s *Local) GetChangesAfter(
 	startID string,
-	limit int,
+	limit int64,
 ) (*contract.PendingVaultRecordChange, error) {
 	return s.repository.GetChangesAfter(
 		s.currentVaultDir,
@@ -333,7 +333,7 @@ func (s *Local) GetChangesAfter(
 func (s *Local) SyncOnSot(
 	authorizer *tacenvaentity.User,
 	sotStartChangeID string,
-	limit int,
+	limit int64,
 	replicaChanges *contract.PendingVaultRecordChange,
 ) (err error) {
 	return s.repository.SyncOnSot(
@@ -396,4 +396,10 @@ func (s *Local) StoreBlob(
 	}
 
 	return nil
+}
+
+func (s *Local) Find(vaultRecordID string) (*tacpassentity.VaultRecord, error) {
+	var vaultRecord tacpassentity.VaultRecord
+	err := s.vaultRecordFile.Find(vaultRecordID, &vaultRecord)
+	return &vaultRecord, err
 }

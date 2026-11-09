@@ -16,6 +16,7 @@ import (
 	"github.com/tacenva/tacpass-core/contract"
 	"github.com/tacenva/tacpass-core/entity"
 	tacpassentity "github.com/tacenva/tacpass-core/entity"
+	"github.com/tacenva/tacpass-core/errormessage"
 	"github.com/tacenva/tacpass-core/vaultrecord"
 	"gorm.io/gorm"
 )
@@ -65,7 +66,7 @@ func (s *ReplicaService) Create(
 ) error {
 	vault.Name = strings.TrimSpace(vault.Name)
 	if vault.Name == "" {
-		return ErrNameEmpty
+		return errormessage.ErrNameEmpty
 	}
 
 	vaultKey, err := credential.Generate(32)
@@ -122,11 +123,11 @@ func (s *ReplicaService) Update(
 	vault.Name = strings.TrimSpace(vault.Name)
 
 	if vault.ID == "" {
-		return ErrNotFound
+		return errormessage.ErrNotFound
 	}
 
 	if vault.Name == "" {
-		return ErrNameEmpty
+		return errormessage.ErrNameEmpty
 	}
 
 	return transactionmanager.Transaction(
@@ -161,7 +162,7 @@ func (s *ReplicaService) Delete(
 	vaultID = strings.TrimSpace(vaultID)
 
 	if vaultID == "" {
-		return ErrNotFound
+		return errormessage.ErrNotFound
 	}
 
 	err := transactionmanager.Transaction(
@@ -230,7 +231,7 @@ func (s *ReplicaService) List(
 func (s *ReplicaService) GetChangesAfter(
 	sotID string,
 	syncLastChangeID string,
-	syncLimit int,
+	syncLimit int64,
 ) (*contract.PendingVaultChange, error) {
 	changes, err := s.syncService.GetChangesAfter(
 		sotID,
@@ -321,49 +322,39 @@ func (s *ReplicaService) applyChanges(
 
 	for _, change := range syncChanges {
 		vaultID := change.EntityID
+
 		switch change.Operation {
-		case tacenvaentity.OperationCreate:
-			existData, exist := appliedChanges.VaultChangeDataList[vaultID]
-			if !exist {
+		case tacenvaentity.OperationCreate, tacenvaentity.OperationUpdate:
+			changeData, exists := appliedChanges.VaultChangeDataList[vaultID]
+			if !exists {
 				continue
 			}
 
-			vault, err := setVault(&existData, replicaAccessGroupID)
+			vault, err := setVault(&changeData, replicaAccessGroupID)
 			if err != nil {
 				return err
 			}
-
-			// debug.LogJSON("vault create sync", vault)
-
-			err = fileTx.Insert(vault).Error
-			if err != nil {
-				return err
-			}
-
-		case tacenvaentity.OperationUpdate:
-			existData, exist := appliedChanges.VaultChangeDataList[vaultID]
-			if !exist {
+			if vault == nil {
 				continue
 			}
-			vault, err := setVault(&existData, replicaAccessGroupID)
-			if err != nil {
-				return err
-			}
 
-			// debug.LogJSON("vault update sync", vault)
+			if change.Operation == tacenvaentity.OperationCreate {
+				if err := fileTx.Insert(vault).Error; err != nil {
+					return err
+				}
+				continue
+			}
 
 			err = fileTx.Update(vault).Error
+			if errors.Is(err, database.ErrRecordNotFound) {
+				err = fileTx.Insert(vault).Error
+			}
 			if err != nil {
-				if errors.Is(err, database.ErrRecordNotFound) {
-					continue
-				}
-
 				return err
 			}
 
 		case tacenvaentity.OperationDelete:
-			err := fileTx.Delete(vaultID).Error
-			if err != nil {
+			if err := fileTx.Delete(vaultID).Error; err != nil {
 				if errors.Is(err, database.ErrRecordNotFound) {
 					continue
 				}
@@ -424,6 +415,16 @@ func (s *ReplicaService) Sync(
 		s.repository.db,
 		s.vaultFile,
 		func(gormTx *gorm.DB, fileTx *database.DatabaseFile) error {
+			// for id, data := range appliedData {
+			// 	log.Printf(
+			// 		"vault map key=%s vault ID=%s name=%s access count=%d",
+			// 		id,
+			// 		data.Vault.ID,
+			// 		data.Vault.Name,
+			// 		len(data.VaultAccessList),
+			// 	)
+			// }
+
 			if err := s.applyChanges(
 				fileTx,
 				replicaAccessGroupID,
@@ -468,5 +469,23 @@ func (s *ReplicaService) GetWrappedKey(
 func (s *ReplicaService) GetRecordBlob(
 	vaultID string,
 ) ([]byte, error) {
-	return s.tacenvaDB.Read(vaultID)
+	return s.tacenvaDB.ReadMetadataOnly(vaultID)
+}
+
+func (s *ReplicaService) GetChangeCount(
+	sotID string,
+	syncLastChangeID string,
+) (*contract.PendingTotalChanges, error) {
+	totalVaultChanges, err := s.syncService.GetChangeCount(
+		sotID,
+		syncEntityVault,
+		syncLastChangeID,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &contract.PendingTotalChanges{
+		Count: totalVaultChanges,
+	}, nil
 }

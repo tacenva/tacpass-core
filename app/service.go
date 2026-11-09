@@ -33,7 +33,8 @@ func NewServices(
 	vaultAccessService := vaultaccess.NewService(
 		vaultaccess.NewRepository(sqliteDB),
 		tacenvaService.AccessControl.PublicKeyOfGroups,
-		tacenvaService.AccessControl.GetTree,
+		tacenvaService.AccessControl.List,
+		tacenvaService.AccessControl.SyncGroups,
 	)
 
 	vaultService := vault.NewService(

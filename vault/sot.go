@@ -10,6 +10,7 @@ import (
 	"github.com/tacenva/tacenva-core/util/credential"
 	"github.com/tacenva/tacpass-core/contract"
 	tacpassentity "github.com/tacenva/tacpass-core/entity"
+	"github.com/tacenva/tacpass-core/errormessage"
 	"github.com/tacenva/tacpass-core/internal/vaultaccess"
 	"github.com/tacenva/tacpass-core/vaultrecord"
 	"gorm.io/gorm"
@@ -67,6 +68,12 @@ func (s *SotService) Create(
 	vault *tacpassentity.Vault,
 	lastChangeID *string,
 ) error {
+	if err := s.verifyWriterAccess(
+		authorizedUser,
+	); err != nil {
+		return err
+	}
+
 	publicKeyOfGroups, err := s.vaultaccessService.PublicKeyOfGroups(
 		authorizedUser,
 		vault.GroupIDs,
@@ -118,11 +125,11 @@ func (s *SotService) update(
 	vaultAccessList []tacpassentity.VaultAccess,
 ) error {
 	if vault.ID == "" {
-		return ErrNotFound
+		return errormessage.ErrNotFound
 	}
 
 	if vault.Name == "" {
-		return ErrNameEmpty
+		return errormessage.ErrNameEmpty
 	}
 
 	groupIDs := make([]string, 0, len(vaultAccessList))
@@ -149,7 +156,14 @@ func (s *SotService) Update(
 	lastChangeID *string,
 ) error {
 	if vault == nil {
-		return ErrNotFound
+		return errormessage.ErrNotFound
+	}
+
+	if err := s.verifyVaultAccess(
+		authorizedUser,
+		vault.ID,
+	); err != nil {
+		return err
 	}
 
 	vault.ID = strings.TrimSpace(vault.ID)
@@ -209,22 +223,24 @@ func (s *SotService) delete(
 
 func (s *SotService) Delete(
 	authorizedUser *tacenvaentity.User,
-	id string,
+	vaultID string,
 	sotID string,
 	lastChangeID *string,
 ) error {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return ErrNotFound
+	if err := s.verifyVaultAccess(
+		authorizedUser,
+		vaultID,
+	); err != nil {
+		return err
 	}
 
-	vault, err := s.repository.FindByID(id)
+	vault, err := s.repository.FindByID(vaultID)
 	if err != nil {
 		return err
 	}
 
 	if vault == nil {
-		return ErrNotFound
+		return errormessage.ErrNotFound
 	}
 
 	return s.repository.db.Transaction(func(tx *gorm.DB) error {
@@ -260,64 +276,6 @@ func (s *SotService) List(
 	}
 
 	return vaultList, nil
-}
-
-func (s *SotService) GetChangesAfter(
-	authorizedUser *tacenvaentity.User,
-	syncLastChangeID string,
-	syncLimit int,
-) (*contract.PendingVaultChange, error) {
-	changes, err := s.syncService.GetChangesAfter(
-		authorizedUser.AccessUnit.SotID,
-		syncEntityVault,
-		syncLastChangeID,
-		syncLimit,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	vaultChangeDataList := make(map[string]contract.VaultChangeData)
-
-	for _, change := range changes {
-		if _, exists := vaultChangeDataList[change.EntityID]; exists {
-			continue
-		}
-
-		vault, err := s.repository.FindByID(change.EntityID)
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				continue
-			}
-			return nil, err
-		}
-
-		vaultChangeDataList[change.EntityID] = contract.VaultChangeData{
-			Vault: *vault,
-		}
-	}
-
-	for vaultID, data := range vaultChangeDataList {
-		vaFromVault, err := s.vaultaccessService.Get(
-			vaultID,
-			authorizedUser.AccessUnit.GroupID,
-		)
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				continue
-			}
-
-			return nil, err
-		}
-
-		data.VaultAccessList = []tacpassentity.VaultAccess{*vaFromVault}
-		vaultChangeDataList[vaultID] = data
-	}
-
-	return &contract.PendingVaultChange{
-		SyncChanges:         changes,
-		VaultChangeDataList: vaultChangeDataList,
-	}, nil
 }
 
 func (s *SotService) applyChanges(
@@ -387,7 +345,7 @@ func (s *SotService) filterAllowedChangesOnly(
 
 		isAllowed, exists := seen[vaultID]
 		if !exists {
-			allowed, err := s.repository.IsAllowedToChange(
+			allowed, err := s.vaultaccessService.Exists(
 				syncChange.EntityID,
 				authorizedGroupID,
 			)
@@ -419,9 +377,15 @@ func (s *SotService) filterAllowedChangesOnly(
 func (s *SotService) Sync(
 	authorizedUser *tacenvaentity.User,
 	sotStartChangeID string,
-	limit int,
+	limit int64,
 	replicaChanges *contract.PendingVaultChange,
 ) (*contract.PendingVaultChange, error) {
+	if err := s.verifyWriterAccess(
+		authorizedUser,
+	); err != nil {
+		return nil, err
+	}
+
 	allowedChanges, err := s.filterAllowedChangesOnly(
 		authorizedUser.AccessUnit.GroupID,
 		replicaChanges,
@@ -429,7 +393,6 @@ func (s *SotService) Sync(
 	if err != nil {
 		return nil, err
 	}
-
 	// debug.LogJSON("Replica changes", replicaChanges)
 	// debug.LogJSON("Allowed changes", allowedChanges)
 
@@ -489,4 +452,64 @@ func (s *SotService) GetWrappedKey(
 	}
 
 	return vaFromVault.WrappedVaultKey, nil
+}
+
+func (s *SotService) GetChangesAfter(
+	authorizedUser *tacenvaentity.User,
+	syncLastChangeID string,
+	syncLimit int64,
+) (*contract.PendingVaultChange, error) {
+	changes, err := s.syncService.GetChangesAfter(
+		authorizedUser.AccessUnit.SotID,
+		syncEntityVault,
+		syncLastChangeID,
+		syncLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	vaultIDs := make([]string, 0, len(changes))
+	seen := make(map[string]struct{}, len(changes))
+
+	for i := range changes {
+		id := changes[i].EntityID
+		if _, exists := seen[id]; exists {
+			continue
+		}
+
+		seen[id] = struct{}{}
+		vaultIDs = append(vaultIDs, id)
+	}
+
+	vaultChangeDataList, err := s.vaultaccessService.FindVaultChangeData(
+		vaultIDs,
+		authorizedUser.AccessUnit.GroupID,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &contract.PendingVaultChange{
+		SyncChanges:         changes,
+		VaultChangeDataList: vaultChangeDataList,
+	}, nil
+}
+
+func (s *SotService) GetChangeCount(
+	authorizedUser *tacenvaentity.User,
+	syncLastChangeID string,
+) (*contract.PendingTotalChanges, error) {
+	totalVaultChanges, err := s.syncService.GetChangeCount(
+		authorizedUser.AccessUnit.SotID,
+		syncEntityVault,
+		syncLastChangeID,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &contract.PendingTotalChanges{
+		Count: totalVaultChanges,
+	}, nil
 }

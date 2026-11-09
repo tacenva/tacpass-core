@@ -3,9 +3,12 @@ package vaultaccess
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	tacenvaentity "github.com/tacenva/tacenva-core/entity"
+	"github.com/tacenva/tacenva-core/genericerror"
 	"github.com/tacenva/tacenva-core/util/keyring"
+	"github.com/tacenva/tacpass-core/contract"
 	tacpassentity "github.com/tacenva/tacpass-core/entity"
 	"gorm.io/gorm"
 )
@@ -19,9 +22,14 @@ type Service struct {
 	) (map[string]string, error)
 
 	AllAccessGroup func(
-		groupID string,
 		sotID string,
 	) ([]tacenvaentity.AccessGroup, error)
+
+	SyncGroups func(
+		sotID string,
+		groups []tacenvaentity.AccessGroup,
+		lastSyncChange *tacenvaentity.SyncChange,
+	) error
 }
 
 func NewService(
@@ -33,14 +41,20 @@ func NewService(
 	) (map[string]string, error),
 
 	AllAccessGroup func(
-		groupID string,
 		sotID string,
 	) ([]tacenvaentity.AccessGroup, error),
+
+	SyncGroups func(
+		sotID string,
+		groups []tacenvaentity.AccessGroup,
+		lastSyncChange *tacenvaentity.SyncChange,
+	) error,
 ) *Service {
 	return &Service{
 		repository:        repository,
 		PublicKeyOfGroups: PublicKeyOfGroups,
 		AllAccessGroup:    AllAccessGroup,
+		SyncGroups:        SyncGroups,
 	}
 }
 
@@ -143,4 +157,94 @@ func (s *Service) Generate(
 	}
 
 	return vaultAccessList, nil
+}
+
+func (s *Service) Exists(
+	vaultID string,
+	accessGroupID string,
+) (bool, error) {
+	vaultID = strings.TrimSpace(vaultID)
+	accessGroupID = strings.TrimSpace(accessGroupID)
+
+	if vaultID == "" {
+		return false, genericerror.ErrEmptyValue
+	}
+
+	if accessGroupID == "" {
+		return false, genericerror.ErrEmptyValue
+	}
+
+	return s.repository.Exists(vaultID, accessGroupID)
+}
+
+func (s *Service) CountAccessibleVaults(
+	vaultIDs []string,
+	accessGroupID string,
+) (int64, error) {
+	accessGroupID = strings.TrimSpace(accessGroupID)
+	if accessGroupID == "" {
+		return 0, genericerror.ErrEmptyValue
+	}
+
+	if len(vaultIDs) == 0 {
+		return 0, nil
+	}
+
+	normalizedIDs := make([]string, 0, len(vaultIDs))
+	seen := make(map[string]struct{}, len(vaultIDs))
+
+	for _, id := range vaultIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			return 0, genericerror.ErrEmptyValue
+		}
+
+		if _, exists := seen[id]; exists {
+			continue
+		}
+
+		seen[id] = struct{}{}
+		normalizedIDs = append(normalizedIDs, id)
+	}
+
+	return s.repository.CountAccessibleVaults(
+		normalizedIDs,
+		accessGroupID,
+	)
+}
+
+func (s *Service) FindVaultChangeData(
+	vaultIDs []string,
+	accessGroupID string,
+) (map[contract.VaultID]contract.VaultChangeData, error) {
+	accessGroupID = strings.TrimSpace(accessGroupID)
+	if accessGroupID == "" {
+		return nil, genericerror.ErrEmptyValue
+	}
+
+	if len(vaultIDs) == 0 {
+		return nil, nil
+	}
+
+	uniqueVaultIDs := make([]string, 0, len(vaultIDs))
+	seen := make(map[string]struct{}, len(vaultIDs))
+
+	for _, id := range vaultIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			return nil, genericerror.ErrEmptyValue
+		}
+
+		if _, exists := seen[id]; exists {
+			continue
+		}
+
+		seen[id] = struct{}{}
+		uniqueVaultIDs = append(uniqueVaultIDs, id)
+	}
+
+	return s.repository.FindVaultChangeData(
+		uniqueVaultIDs,
+		accessGroupID,
+	)
 }

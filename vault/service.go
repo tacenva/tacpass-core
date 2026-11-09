@@ -1,20 +1,11 @@
 package vault
 
 import (
-	"errors"
-
 	tacenvaentity "github.com/tacenva/tacenva-core/entity"
 	"github.com/tacenva/tacenva-core/sync"
-	"github.com/tacenva/tacpass-core/contract"
 	"github.com/tacenva/tacpass-core/internal/vaultaccess"
 	"github.com/tacenva/tacpass-core/vaultrecord"
 	"gorm.io/gorm"
-)
-
-var (
-	ErrNotFound   = errors.New("vault not found")
-	ErrNameEmpty  = errors.New("vault name cannot be empty")
-	ErrPermission = errors.New("permission denied")
 )
 
 const syncEntityVault = "vault"
@@ -40,6 +31,7 @@ func NewService(
 	)
 	vaultrecordService := vaultrecord.NewService(
 		vaultrecordRepository,
+		vaultaccessService.Exists,
 	)
 	return &Service{
 		repository:         repository,
@@ -79,24 +71,6 @@ func (s *Service) GetSyncLatestChangeID(
 	return vaultSyncState.LastChangeID, err
 }
 
-func (s *Service) GetChangeCount(
-	sotID string,
-	syncLastChangeID string,
-) (*contract.PendingTotalChanges, error) {
-	vaultChangeCount, err := s.syncService.GetChangeCount(
-		sotID,
-		syncEntityVault,
-		syncLastChangeID,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return &contract.PendingTotalChanges{
-		Count: vaultChangeCount,
-	}, nil
-}
-
 func (s *Service) SetSyncStateToBeLatest(
 	sotID string,
 ) error {
@@ -110,11 +84,21 @@ func (s *Service) SetSyncStateToBeLatest(
 }
 
 func (s *Service) AllAccessGroup(
-	groupID string,
 	sotID string,
 ) ([]tacenvaentity.AccessGroup, error) {
 	return s.vaultaccessService.AllAccessGroup(
-		groupID,
 		sotID,
+	)
+}
+
+func (s *Service) SyncGroups(
+	sotID string,
+	groups []tacenvaentity.AccessGroup,
+	lastSyncChange *tacenvaentity.SyncChange,
+) error {
+	return s.vaultaccessService.SyncGroups(
+		sotID,
+		groups,
+		lastSyncChange,
 	)
 }

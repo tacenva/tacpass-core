@@ -17,10 +17,20 @@ type Service struct {
 	repository *repository
 	Local      *Local
 	Remote     *Remote
+
+	vaultAccessExists func(
+		vaultID string,
+		accessGroupID string,
+	) (bool, error)
 }
 
 func NewService(
 	repository *repository,
+
+	vaultAccessExists func(
+		vaultID string,
+		accessGroupID string,
+	) (bool, error),
 ) *Service {
 	return &Service{
 		Local: NewLocalService(
@@ -29,6 +39,7 @@ func NewService(
 
 		Remote: NewRemoteService(
 			repository,
+			vaultAccessExists,
 		),
 	}
 }

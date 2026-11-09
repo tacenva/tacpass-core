@@ -8,12 +8,13 @@ import (
 )
 
 type VaultRecord struct {
-	ID          string    `json:"id,omitempty"`
-	Identifier  string    `json:"identifier,omitempty"`
-	Endpoint    string    `json:"endpoint,omitempty"`
-	Password    string    `json:"password,omitempty"`
-	RenewalDate time.Time `json:"renewal_date,omitempty"`
-	UpdatedAt   time.Time `json:"updated_at,omitempty"`
+	ID            string        `json:"id,omitempty"`
+	Identifier    string        `json:"identifier,omitempty"`
+	Endpoint      string        `json:"endpoint,omitempty"`
+	Password      string        `json:"password,omitempty"`
+	RenewalPeriod time.Duration `json:"renewal_period,omitempty"`
+	LastRenewedAt time.Time     `json:"last_renewed_at,omitempty"`
+	UpdatedAt     time.Time     `json:"updated_at,omitempty"`
 }
 
 type Vault struct {

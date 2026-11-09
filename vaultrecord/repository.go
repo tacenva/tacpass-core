@@ -99,7 +99,7 @@ func (r *repository) GetChangesAfter(
 	vaultID string,
 	sotID string,
 	startID string,
-	limit int,
+	limit int64,
 ) (*contract.PendingVaultRecordChange, error) {
 	if vaultID == "" {
 		return nil, ErrVaultIDEmpty
@@ -430,7 +430,7 @@ func (r *repository) SyncOnSot(
 	sotID string,
 	vaultID string,
 	sotStartChangeID string,
-	limit int,
+	limit int64,
 	replicaChanges *contract.PendingVaultRecordChange,
 ) (err error) {
 	isAllowed, err := r.IsAllowedToChange(
