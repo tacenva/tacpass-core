@@ -29,6 +29,7 @@ type ReplicaService struct {
 	currentVaultDir *string
 	tacenvaDB       *database.DB
 	vaultFile       *database.DatabaseFile
+	changeBy        string
 }
 
 func NewReplicaService(
@@ -40,6 +41,7 @@ func NewReplicaService(
 		vaultRecordService: vaultRecordService,
 		syncService:        syncService,
 		repository:         repository,
+		changeBy:           "local",
 	}
 }
 
@@ -97,7 +99,7 @@ func (s *ReplicaService) Create(
 				vault.ID,
 				tacenvaentity.OperationCreate,
 				sotID,
-				"",
+				s.changeBy,
 			); err != nil {
 				return err
 			}
@@ -146,7 +148,7 @@ func (s *ReplicaService) Update(
 				vault.ID,
 				tacenvaentity.OperationUpdate,
 				sotID,
-				"local",
+				s.changeBy,
 			); err != nil {
 				return err
 			}
@@ -180,7 +182,7 @@ func (s *ReplicaService) Delete(
 				vaultID,
 				tacenvaentity.OperationDelete,
 				sotID,
-				"",
+				s.changeBy,
 			); err != nil {
 				return err
 			}
