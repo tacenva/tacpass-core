@@ -319,6 +319,16 @@ func (s *SotService) applyChanges(
 	return nil
 }
 
+func containsGroupID(groupIDs []string, target string) bool {
+	for _, groupID := range groupIDs {
+		if groupID == target {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (s *SotService) filterAllowedChangesOnly(
 	authorizedGroupID string,
 	replicaChanges *contract.PendingVaultChange,
@@ -345,15 +355,30 @@ func (s *SotService) filterAllowedChangesOnly(
 
 		isAllowed, exists := seen[vaultID]
 		if !exists {
-			allowed, err := s.vaultaccessService.Exists(
-				syncChange.EntityID,
-				authorizedGroupID,
-			)
-			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, err
+			switch syncChange.Operation {
+			case tacenvaentity.OperationCreate:
+				changeData, ok := replicaChanges.VaultChangeDataList[vaultID]
+				if !ok {
+					return nil, genericerror.ErrEmptyValue
+				}
+
+				isAllowed = containsGroupID(
+					changeData.Vault.GroupIDs,
+					authorizedGroupID,
+				)
+
+			default:
+				allowed, err := s.vaultaccessService.Exists(
+					syncChange.EntityID,
+					authorizedGroupID,
+				)
+				if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+					return nil, err
+				}
+
+				isAllowed = allowed
 			}
 
-			isAllowed = allowed
 			seen[vaultID] = isAllowed
 		}
 
