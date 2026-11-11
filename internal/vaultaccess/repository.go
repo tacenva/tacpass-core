@@ -16,13 +16,6 @@ func NewRepository(db *gorm.DB) *repository {
 	}
 }
 
-// func (r *repository) Create(
-// 	tx *gorm.DB,
-// 	vaultAccess *entity.VaultAccess,
-// ) error {
-// 	return tx.Create(vaultAccess).Error
-// }
-
 func (r *repository) CreateBulk(
 	tx *gorm.DB,
 	vaultAccesses []tacpassentity.VaultAccess,
@@ -49,19 +42,6 @@ func (r *repository) DeleteBulk(
 		Where("vault_id = ? AND access_group_id IN ?", vaultID, toDelete).
 		Delete(&tacpassentity.VaultAccess{}).Error
 }
-
-// func (r *repository) DeleteMissing(
-// 	tx *gorm.DB,
-// 	incomingIDs []string,
-// ) error {
-// 	if len(incomingIDs) > 0 {
-// 		return nil
-// 	}
-// 	return tx.
-// 		Where("id NOT IN ?", incomingIDs).
-// 		Delete(&tacenvaentity.AccessGroup{}).
-// 		Error
-// }
 
 func (r *repository) FindByVaultAndAccessGroup(
 	vaultID string,

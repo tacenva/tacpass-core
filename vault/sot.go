@@ -10,7 +10,6 @@ import (
 	"github.com/tacenva/tacenva-core/util/credential"
 	"github.com/tacenva/tacpass-core/contract"
 	tacpassentity "github.com/tacenva/tacpass-core/entity"
-	"github.com/tacenva/tacpass-core/errormessage"
 	"github.com/tacenva/tacpass-core/internal/vaultaccess"
 	"github.com/tacenva/tacpass-core/vaultrecord"
 	"gorm.io/gorm"
@@ -124,12 +123,11 @@ func (s *SotService) update(
 	vault *tacpassentity.Vault,
 	vaultAccessList []tacpassentity.VaultAccess,
 ) error {
-	if vault.ID == "" {
-		return errormessage.ErrNotFound
-	}
-
-	if vault.Name == "" {
-		return errormessage.ErrNameEmpty
+	if err := genericerror.ValidateRequired(map[string]any{
+		"vault id":   vault.ID,
+		"vault name": vault.Name,
+	}); err != nil {
+		return err
 	}
 
 	groupIDs := make([]string, 0, len(vaultAccessList))
@@ -156,7 +154,7 @@ func (s *SotService) Update(
 	lastChangeID *string,
 ) error {
 	if vault == nil {
-		return errormessage.ErrNotFound
+		return genericerror.ErrRequired("vault")
 	}
 
 	if err := s.verifyVaultAccess(
@@ -240,7 +238,7 @@ func (s *SotService) Delete(
 	}
 
 	if vault == nil {
-		return errormessage.ErrNotFound
+		return genericerror.ErrRequired("vault")
 	}
 
 	return s.repository.db.Transaction(func(tx *gorm.DB) error {
@@ -333,8 +331,11 @@ func (s *SotService) filterAllowedChangesOnly(
 	authorizedGroupID string,
 	replicaChanges *contract.PendingVaultChange,
 ) (*contract.PendingVaultChange, error) {
-	if replicaChanges == nil {
-		return nil, genericerror.ErrEmptyValue
+	if err := genericerror.ValidateRequired(map[string]any{
+		"group id":        authorizedGroupID,
+		"replica changes": replicaChanges,
+	}); err != nil {
+		return nil, err
 	}
 
 	allowedChanges := &contract.PendingVaultChange{
@@ -359,7 +360,7 @@ func (s *SotService) filterAllowedChangesOnly(
 			case tacenvaentity.OperationCreate:
 				changeData, ok := replicaChanges.VaultChangeDataList[vaultID]
 				if !ok {
-					return nil, genericerror.ErrEmptyValue
+					return nil, genericerror.ErrRequired("change data")
 				}
 
 				isAllowed = containsGroupID(

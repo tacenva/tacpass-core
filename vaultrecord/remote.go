@@ -5,9 +5,9 @@ import (
 
 	"github.com/tacenva/database"
 	tacenvaentity "github.com/tacenva/tacenva-core/entity"
+	"github.com/tacenva/tacenva-core/genericerror"
 	"github.com/tacenva/tacenva-core/sync"
 	"github.com/tacenva/tacpass-core/contract"
-	"github.com/tacenva/tacpass-core/errormessage"
 )
 
 type Remote struct {
@@ -119,9 +119,8 @@ func (s *Remote) SyncOnSot(
 	replicaChanges *contract.PendingVaultRecordChange,
 ) error {
 	vaultID = strings.TrimSpace(vaultID)
-
 	if vaultID == "" {
-		return errormessage.ErrNotFound
+		return genericerror.ErrRequired("vault id")
 	}
 
 	if err := s.verifyVaultAccess(

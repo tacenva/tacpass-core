@@ -9,6 +9,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/tacenva/database"
 	tacenvaentity "github.com/tacenva/tacenva-core/entity"
+	"github.com/tacenva/tacenva-core/genericerror"
 	"github.com/tacenva/tacenva-core/sync"
 	"github.com/tacenva/tacenva-core/transactionmanager"
 	"github.com/tacenva/tacenva-core/util/credential"
@@ -16,7 +17,6 @@ import (
 	"github.com/tacenva/tacpass-core/contract"
 	"github.com/tacenva/tacpass-core/entity"
 	tacpassentity "github.com/tacenva/tacpass-core/entity"
-	"github.com/tacenva/tacpass-core/errormessage"
 	"github.com/tacenva/tacpass-core/vaultrecord"
 	"gorm.io/gorm"
 )
@@ -66,7 +66,7 @@ func (s *ReplicaService) Create(
 ) error {
 	vault.Name = strings.TrimSpace(vault.Name)
 	if vault.Name == "" {
-		return errormessage.ErrNameEmpty
+		return genericerror.ErrRequired("vault name")
 	}
 
 	vaultKey, err := credential.Generate(32)
@@ -122,12 +122,11 @@ func (s *ReplicaService) Update(
 	vault.ID = strings.TrimSpace(vault.ID)
 	vault.Name = strings.TrimSpace(vault.Name)
 
-	if vault.ID == "" {
-		return errormessage.ErrNotFound
-	}
-
-	if vault.Name == "" {
-		return errormessage.ErrNameEmpty
+	if err := genericerror.ValidateRequired(map[string]any{
+		"vault id":   vault.ID,
+		"vault name": vault.Name,
+	}); err != nil {
+		return err
 	}
 
 	return transactionmanager.Transaction(
@@ -160,9 +159,8 @@ func (s *ReplicaService) Delete(
 	lastChangeID *string,
 ) error {
 	vaultID = strings.TrimSpace(vaultID)
-
 	if vaultID == "" {
-		return errormessage.ErrNotFound
+		return genericerror.ErrRequired("vault id")
 	}
 
 	err := transactionmanager.Transaction(

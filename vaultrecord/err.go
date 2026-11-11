@@ -6,19 +6,18 @@ import (
 
 	tacenvaentity "github.com/tacenva/tacenva-core/entity"
 	"github.com/tacenva/tacenva-core/genericerror"
-	"github.com/tacenva/tacpass-core/errormessage"
 )
 
 var (
 	errWriterOnly        = errors.New("only users with write access are allowed to perform this action")
-	errInvalidAuthorizer = genericerror.ErrEmptyValue
+	errInvalidAuthorized = genericerror.ErrRequired("authorized user")
 )
 
 func (s *Remote) verifyWriterAccess(
 	authorizedUser *tacenvaentity.User,
 ) error {
 	if authorizedUser == nil {
-		return errInvalidAuthorizer
+		return errInvalidAuthorized
 	}
 
 	if err := authorizedUser.ValidateAccess(); err != nil {
@@ -42,7 +41,7 @@ func (s *Remote) verifyVaultAccess(
 
 	vaultID = strings.TrimSpace(vaultID)
 	if vaultID == "" {
-		return genericerror.ErrEmptyValue
+		return genericerror.ErrRequired("vault id")
 	}
 
 	exists, err := s.vaultAccessExists(
@@ -54,7 +53,7 @@ func (s *Remote) verifyVaultAccess(
 	}
 
 	if !exists {
-		return errormessage.ErrPermission
+		return genericerror.ErrPermissionDenied
 	}
 
 	return nil
